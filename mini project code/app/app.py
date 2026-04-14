@@ -1,4 +1,4 @@
-﻿#trail 1 best
+#trail 1 best
 import streamlit as st
 import streamlit.components.v1 as components
 import sqlite3
@@ -10,10 +10,20 @@ import random
 import pandas as pd
 import altair as alt
 from login import create_user, login_user
+from predict import predict_with_recommendations
+import math
 from question_generator import (
     generate_test,
     run 
 )
+
+# Optional hardware integration (Arduino/MAX30105) via serial.
+try:
+    import serial  # type: ignore
+    from serial.tools import list_ports  # type: ignore
+except Exception:  # pragma: no cover
+    serial = None
+    list_ports = None
 
 st.set_page_config(page_title="Cognitive Assessment System", layout="wide")
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -70,6 +80,83 @@ def _resolve_question_image_path(image_ref):
     return None
 
 
+def _list_serial_ports() -> list[str]:
+    if list_ports is None:
+        return []
+    return [p.device for p in list_ports.comports()]
+
+
+@st.cache_resource(show_spinner=False)
+def _get_serial_connection(port: str, baud: int):
+    if serial is None:
+        raise RuntimeError("pyserial not installed. Add 'pyserial' to requirements.txt and install dependencies.")
+    ser = serial.Serial(port=port, baudrate=baud, timeout=0.15)
+    # Flush any old bytes
+    try:
+        ser.reset_input_buffer()
+    except Exception:
+        pass
+    return ser
+
+
+def _parse_arduino_line(line: str) -> dict:
+    """
+    Expected examples:
+    IR=12345, BPM=72.12, Avg BPM=70
+    IR=12345, BPM=0.00, Avg BPM=0 No finger?
+    """
+    if not line:
+        return {}
+    if "No finger" in line:
+        return {"no_finger": True}
+
+    m_avg = re.search(r"Avg\s*BPM\s*=\s*(\d+)", line)
+    m_bpm = re.search(r"\bBPM\s*=\s*([0-9]+(?:\.[0-9]+)?)", line)
+    out: dict = {}
+    if m_avg:
+        out["avg_bpm"] = int(m_avg.group(1))
+    if m_bpm:
+        out["bpm"] = float(m_bpm.group(1))
+    return out
+
+
+def _read_latest_sensor_sample(ser) -> dict:
+    """
+    Non-blocking-ish read: drain available lines and return the last parsed sample.
+    """
+    sample: dict = {}
+    try:
+        # Read all available complete lines
+        lines = []
+        while True:
+            raw = ser.readline()
+            if not raw:
+                break
+            try:
+                lines.append(raw.decode("utf-8", errors="ignore").strip())
+            except Exception:
+                continue
+        for ln in lines[-5:]:
+            parsed = _parse_arduino_line(ln)
+            if parsed:
+                sample = parsed
+    except Exception:
+        return {}
+    return sample
+
+
+def _stress_from_bpm(avg_bpm: float) -> float:
+    """
+    Simple mapping until you compute stress from HRV/GSR.
+    60 bpm -> 0.0, 120 bpm -> 1.0 (clipped).
+    """
+    try:
+        v = (float(avg_bpm) - 60.0) / 60.0
+    except Exception:
+        return 0.5
+    return max(0.0, min(1.0, v))
+
+
 def run_memory_display_countdown(state_key, seconds=5):
     timer_key = f"{state_key}_timer_start"
     if timer_key not in st.session_state:
@@ -103,15 +190,49 @@ def render_recall_memory_question(question_idx, question):
         )
         memory_display = question.get("memory_display", "")
         memory_items = [item.strip() for item in memory_display.split(",") if item.strip()]
-        memory_html = "".join(
-            [f"<span style='display:inline-block;margin:4px 6px;padding:10px 14px;border-radius:999px;background:#0f172a;color:#f8fafc;font-weight:700;font-size:1.1rem;'>{item}</span>" for item in memory_items]
-        )
+
+        # Show sequence one-by-one (progressively): 1 sec per item,
+        # then keep the full sequence visible for 2 extra secs.
+        step_timer_key = f"{state_key}_step_timer_start"
+        if step_timer_key not in st.session_state:
+            st.session_state[step_timer_key] = time.time()
+
+        elapsed = int(time.time() - st.session_state[step_timer_key])
+        reveal_seconds = len(memory_items)
+        hold_seconds = 2
+        total_seconds = reveal_seconds + hold_seconds
+
+        # Phase 1: reveal one item each second
+        # Phase 2: hold full sequence visible for 2 seconds
+        if elapsed < reveal_seconds:
+            shown_count = min(len(memory_items), elapsed + 1)
+            status_html = "<div style='color:rgba(203,213,225,0.9);font-size:0.95rem;margin:10px 2px 2px 2px;'>Revealing next item...</div>"
+        elif elapsed < total_seconds:
+            shown_count = len(memory_items)
+            hold_remaining = total_seconds - elapsed
+            status_html = (
+                f"<div style='color:rgba(203,213,225,0.9);font-size:0.95rem;margin:10px 2px 2px 2px;'>"
+                f"Hold full sequence... {hold_remaining}s</div>"
+            )
+        else:
+            shown_count = len(memory_items)
+            status_html = ""
+
+        memory_html = "".join([f"<span class='memory-pill'>{item}</span>" for item in memory_items[:shown_count]])
         st.markdown(
             f"<div class='memory-display'>{memory_html}</div>",
             unsafe_allow_html=True,
         )
-        if run_memory_display_countdown(state_key, 5):
+
+        if status_html:
+            st.markdown(status_html, unsafe_allow_html=True)
+
+        if elapsed < total_seconds:
+            time.sleep(1)
+            st.rerun()
             return False
+
+        st.session_state.pop(step_timer_key, None)
         st.session_state[state_key] = False
         st.rerun()
         return False
@@ -121,15 +242,21 @@ def render_recall_memory_question(question_idx, question):
         unsafe_allow_html=True,
     )
     options = question.get("options", [])
-    selected_label = st.session_state.get(f"recall_answer_{question_idx}")
+    selected_value = st.session_state.get(f"recall_answer_{question_idx}")
+    default_index = None
+    for idx, opt in enumerate(options):
+        if opt == selected_value:
+            default_index = idx
+            break
 
-    for option_idx, option in enumerate(options):
-        is_selected = selected_label == option
-        button_label = f"{'◉' if is_selected else '◯'} {option}"
-        if st.button(button_label, key=f"recall_option_{question_idx}_{option_idx}"):
-            st.session_state[f"recall_answer_{question_idx}"] = option
-            st.session_state.answers[question_idx] = option
-            st.rerun()
+    picked = st.radio(
+        "Select one option:",
+        options,
+        index=default_index,
+        key=f"recall_radio_{question_idx}",
+    )
+    st.session_state[f"recall_answer_{question_idx}"] = picked
+    st.session_state.answers[question_idx] = picked
 
     return True
 
@@ -144,7 +271,8 @@ def number_memory_test(question_idx):
         badges = "".join([f"<span class='num-badge'>{n}</span>" for n in numbers])
         st.markdown("<div style='margin:12px 0;'>Memorize these numbers:</div>", unsafe_allow_html=True)
         st.markdown(f"<div style='display:flex;gap:8px;flex-wrap:wrap;'>{badges}</div>", unsafe_allow_html=True)
-        if run_memory_display_countdown(f"show_numbers_{question_idx}", 5):
+        seconds = len(numbers) + 2
+        if run_memory_display_countdown(f"show_numbers_{question_idx}", seconds):
             return
         st.session_state[f"show_numbers_{question_idx}"] = False
         st.rerun()
@@ -166,7 +294,8 @@ def word_memory_test(question_idx):
         words = st.session_state[f"memory_words_{question_idx}"]
         st.markdown("<div style='margin:12px 0;'>Memorize these words:</div>", unsafe_allow_html=True)
         st.markdown("<div style='display:flex;gap:12px;flex-wrap:wrap;'>" + "".join([f"<span class='num-badge'>{w}</span>" for w in words]) + "</div>", unsafe_allow_html=True)
-        if run_memory_display_countdown(f"show_words_{question_idx}", 5):
+        seconds = len(words) + 2
+        if run_memory_display_countdown(f"show_words_{question_idx}", seconds):
             return
         st.session_state[f"show_words_{question_idx}"] = False
         st.rerun()
@@ -188,7 +317,8 @@ def image_memory_test(question_idx):
         st.markdown("<div style='margin:12px 0;'>Memorize these images:</div>", unsafe_allow_html=True)
         image_html = "".join([f"<span class='num-badge'>{img}</span>" for img in st.session_state[f"shown_images_{question_idx}"]])
         st.markdown(f"<div style='display:flex;gap:8px;flex-wrap:wrap;'>{image_html}</div>", unsafe_allow_html=True)
-        if run_memory_display_countdown(f"show_images_{question_idx}", 5):
+        seconds = len(st.session_state.get(f"shown_images_{question_idx}", [])) + 2
+        if run_memory_display_countdown(f"show_images_{question_idx}", seconds):
             return
         st.session_state[f"show_images_{question_idx}"] = False
         st.rerun()
@@ -210,7 +340,8 @@ def nback_memory_test(question_idx):
         st.markdown("<div style='margin:12px 0;'>Memorize these images in order:</div>", unsafe_allow_html=True)
         image_html = "".join([f"<span class='num-badge'>{img}</span>" for img in st.session_state[f"nback_images_{question_idx}"]])
         st.markdown(f"<div style='display:flex;gap:8px;flex-wrap:wrap;'>{image_html}</div>", unsafe_allow_html=True)
-        if run_memory_display_countdown(f"show_nback_{question_idx}", 5):
+        seconds = len(st.session_state.get(f"nback_images_{question_idx}", [])) + 2
+        if run_memory_display_countdown(f"show_nback_{question_idx}", seconds):
             return
         st.session_state[f"show_nback_{question_idx}"] = False
         st.rerun()
@@ -237,7 +368,8 @@ def grid_memory_test(question_idx):
                 cols = st.columns(grid_size)
             symbol = "🟩" if i in st.session_state[f"grid_pattern_{question_idx}"] else "⬜"
             cols[i % grid_size].markdown(f"# {symbol}")
-        if run_memory_display_countdown(f"show_grid_{question_idx}", 5):
+        seconds = len(st.session_state.get(f"grid_pattern_{question_idx}", [])) + 2
+        if run_memory_display_countdown(f"show_grid_{question_idx}", seconds):
             return
         st.session_state[f"show_grid_{question_idx}"] = False
         st.rerun()
@@ -708,6 +840,8 @@ def init_state():
         st.session_state.visited_questions = []
     if "submit_confirmation_text" not in st.session_state:
         st.session_state.submit_confirmation_text = ""
+    if "show_submit_confirm" not in st.session_state:
+        st.session_state.show_submit_confirm = False
     if "attempted_questions" not in st.session_state:
         st.session_state.attempted_questions = 0
     if "submission_saved" not in st.session_state:
@@ -720,14 +854,183 @@ def init_state():
         st.session_state.max_score = 0.0
     if "score_breakdown" not in st.session_state:
         st.session_state.score_breakdown = {"positive": 0.0, "negative": 0.0, "partial": 0.0}
+    if "domain_scores" not in st.session_state:
+        st.session_state.domain_scores = {}
     if "tab_switch_violations" not in st.session_state:
         st.session_state.tab_switch_violations = 0
+    if "current_test_type" not in st.session_state:
+        st.session_state.current_test_type = "foundation"
+    if "advanced_unlocked" not in st.session_state:
+        st.session_state.advanced_unlocked = False
+    if "_just_unlocked_advanced" not in st.session_state:
+        st.session_state._just_unlocked_advanced = False
 
 
 def apply_theme():
     st.markdown(
         """
         <style>
+        :root {
+            --panel: rgba(15, 23, 42, 0.55);
+            --panel-2: rgba(2, 6, 23, 0.45);
+            --border: rgba(148, 163, 184, 0.24);
+            --text: rgba(241, 245, 249, 0.92);
+            --muted: rgba(203, 213, 225, 0.86);
+            --accent: #3b82f6;
+        }
+
+        /* Layout polish */
+        section.main > div.block-container {
+            /* "Screen card" wrapper: keep ALL content inside a bordered shell */
+            max-width: 1180px !important;
+            margin: 12px auto 24px auto !important;
+            padding: 14px 16px 22px 16px !important;
+            border-radius: 22px !important;
+            background: linear-gradient(180deg, rgba(2, 6, 23, 0.40) 0%, rgba(15, 23, 42, 0.48) 100%) !important;
+            border: 1px solid rgba(148, 163, 184, 0.22) !important;
+            box-shadow: 0 28px 70px rgba(0, 0, 0, 0.45) !important;
+        }
+        /* App background (outside the bordered shell) */
+        .stApp {
+            background: radial-gradient(1100px 600px at 10% 10%, rgba(59, 130, 246, 0.12), transparent 60%),
+                        radial-gradient(1000px 700px at 90% 20%, rgba(14, 165, 233, 0.10), transparent 55%),
+                        linear-gradient(180deg, #020617 0%, #0b1220 100%) !important;
+        }
+
+        /* Headings + body copy */
+        .stMarkdown h1, .stMarkdown h2, .stMarkdown h3 {
+            color: var(--text) !important;
+            letter-spacing: -0.01em;
+        }
+        .stMarkdown p, .stMarkdown span, .stCaption, .stMarkdown small {
+            color: var(--muted) !important;
+        }
+        .stMarkdown h3 {
+            margin-top: 0.35rem !important;
+            margin-bottom: 0.35rem !important;
+        }
+        /* Tighten Streamlit heading blocks (prevents "jumped down" feeling) */
+        div[data-testid="stHeadingWithActionElements"]{
+            margin-top: 0.25rem !important;
+            margin-bottom: 0.25rem !important;
+        }
+
+        /* Remove the extra whitespace above content */
+        header[data-testid="stHeader"] {
+            background: transparent !important;
+            height: 0px !important;
+        }
+        /* Prevent any top-level white bars */
+        div[data-testid="stToolbar"] {
+            right: 12px !important;
+        }
+
+        /* Make common sections read like cards */
+        div[data-testid="stRadio"],
+        div[data-testid="stTable"] {
+            background: var(--panel) !important;
+            border: 1px solid var(--border) !important;
+            border-radius: 16px !important;
+            padding: 14px 14px !important;
+            box-shadow: 0 14px 34px rgba(0, 0, 0, 0.28) !important;
+        }
+
+        /* Radio group alignment */
+        div[data-testid="stRadio"] > div {
+            gap: 12px !important;
+            align-items: center !important;
+        }
+        div[data-testid="stRadio"] label {
+            background: rgba(248, 250, 252, 0.06) !important;
+            border: 1px solid rgba(148, 163, 184, 0.28) !important;
+            border-radius: 999px !important;
+            padding: 10px 14px !important;
+            min-height: 42px !important;
+        }
+        div[data-testid="stRadio"] label:hover {
+            border-color: rgba(191, 219, 254, 0.75) !important;
+            background: rgba(248, 250, 252, 0.09) !important;
+        }
+
+        /* Table: improve contrast + spacing */
+        div[data-testid="stTable"] table {
+            width: 100% !important;
+            border-collapse: separate !important;
+            border-spacing: 0 !important;
+        }
+        div[data-testid="stTable"] thead th {
+            color: rgba(226, 232, 240, 0.92) !important;
+            background: rgba(2, 6, 23, 0.40) !important;
+            border-bottom: 1px solid rgba(148, 163, 184, 0.22) !important;
+            font-weight: 700 !important;
+        }
+        div[data-testid="stTable"] td {
+            color: rgba(241, 245, 249, 0.90) !important;
+            border-bottom: 1px solid rgba(148, 163, 184, 0.14) !important;
+        }
+        div[data-testid="stTable"] tr:hover td {
+            background: rgba(248, 250, 252, 0.04) !important;
+        }
+
+        /* Header nav: consistent pill buttons, not stretched blocks */
+        .st-key-nav_home button,
+        .st-key-nav_signup button,
+        .st-key-nav_login button,
+        .st-key-nav_resources button,
+        .st-key-nav_logout button,
+        .st-key-account_menu button {
+            width: auto !important;
+            min-width: 0 !important;
+            padding: 9px 14px !important;
+            border-radius: 999px !important;
+            background: rgba(248, 250, 252, 0.08) !important;
+            border: 1px solid rgba(248, 250, 252, 0.16) !important;
+            color: rgba(248, 250, 252, 0.92) !important;
+            font-weight: 650 !important;
+        }
+        .st-key-account_menu button {
+            width: 40px !important;
+            height: 40px !important;
+            padding: 0 !important;
+            border-radius: 999px !important;
+            font-size: 1.02rem !important;
+            font-weight: 800 !important;
+            letter-spacing: 0.02em !important;
+            display: inline-flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            background: rgba(59, 130, 246, 0.18) !important;
+            border: 1px solid rgba(191, 219, 254, 0.40) !important;
+        }
+
+        /* Popover panel styling so menu is readable */
+        div[data-testid="stPopoverBody"] {
+            background: rgba(2, 6, 23, 0.92) !important;
+            border: 1px solid rgba(148, 163, 184, 0.26) !important;
+            border-radius: 16px !important;
+            box-shadow: 0 26px 70px rgba(0, 0, 0, 0.55) !important;
+        }
+        div[data-testid="stPopoverBody"] .stButton button {
+            background: rgba(248, 250, 252, 0.06) !important;
+            border: 1px solid rgba(148, 163, 184, 0.22) !important;
+            color: rgba(241, 245, 249, 0.92) !important;
+            border-radius: 12px !important;
+            height: 44px !important;
+            font-weight: 700 !important;
+        }
+        div[data-testid="stPopoverBody"] .stButton button:hover {
+            background: rgba(248, 250, 252, 0.10) !important;
+            border-color: rgba(191, 219, 254, 0.55) !important;
+        }
+        .st-key-nav_home button:hover,
+        .st-key-nav_signup button:hover,
+        .st-key-nav_login button:hover,
+        .st-key-nav_resources button:hover,
+        .st-key-nav_logout button:hover {
+            background: rgba(248, 250, 252, 0.12) !important;
+            border-color: rgba(191, 219, 254, 0.60) !important;
+        }
+
         .stApp {
             animation: pageFade 0.45s ease-out;
         }
@@ -741,6 +1044,24 @@ def apply_theme():
         .stDownloadButton button:hover {
             transform: translateY(-2px);
             box-shadow: 0 10px 20px rgba(15, 23, 42, 0.12);
+        }
+
+        /* Make key action bars shorter + centered */
+        .st-key-take_test_home button,
+        .st-key-take_test_dashboard button,
+        .st-key-take_advanced_dashboard button,
+        .st-key-submit_test_main button,
+        .st-key-submit_cancel button,
+        .st-key-submit_confirm_final button {
+            width: min(360px, 100%) !important;
+            display: block !important;
+            margin-left: auto !important;
+            margin-right: auto !important;
+        }
+        .st-key-submit_confirmation_text input {
+            max-width: 520px !important;
+            margin-left: auto !important;
+            margin-right: auto !important;
         }
         .stMetric {
             transition: transform 0.25s ease, box-shadow 0.25s ease;
@@ -775,9 +1096,9 @@ def apply_theme():
             align-items: center;
             justify-content: center;
             border-radius: 14px;
-            background: rgba(255, 255, 255, 0.16);
-            border: 1px solid rgba(255, 255, 255, 0.18);
-            font-size: 1.15rem;
+            background: rgba(2, 6, 23, 0.35);
+            border: 1px solid rgba(191, 219, 254, 0.22);
+            box-shadow: 0 10px 22px rgba(0, 0, 0, 0.25);
         }
         .app-nav {
             display: flex;
@@ -806,6 +1127,7 @@ def apply_theme():
         }
         .stTextInput {
             display: flex !important;
+            flex-direction: column !important;
             justify-content: center !important;
         }
         .stTextInput input,
@@ -870,11 +1192,12 @@ def apply_theme():
             margin-top: 10px;
         }
         .home-card {
-            background: #f7f9fb;
-            border: 1px solid #d4dbe3;
-            border-radius: 16px;
-            padding: 18px;
-            box-shadow: 0 10px 24px rgba(15, 23, 42, 0.05);
+            /* This wrapper was causing the "white bar" above the hero */
+            background: transparent;
+            border: none;
+            border-radius: 0;
+            padding: 0;
+            box-shadow: none;
         }
         .hero-panel {
             background: linear-gradient(135deg, #0f2740 0%, #1f3f5b 52%, #5f7d99 100%);
@@ -951,21 +1274,24 @@ def apply_theme():
             border-color: rgba(255, 255, 255, 0.26);
         }
         .feature-card {
-            background: linear-gradient(180deg, #e8f1fb 0%, #dce9f7 100%);
-            border: 1px solid #abc2dc;
+            background:
+              linear-gradient(180deg, rgba(255,255,255,0.72) 0%, rgba(255,255,255,0.64) 100%),
+              radial-gradient(900px 280px at 15% 10%, rgba(59,130,246,0.18), transparent 60%),
+              radial-gradient(760px 300px at 85% 30%, rgba(34,211,238,0.14), transparent 55%),
+              repeating-linear-gradient(135deg, rgba(15,23,42,0.018) 0px, rgba(15,23,42,0.018) 2px, transparent 2px, transparent 10px);
+            border: 1px solid rgba(148, 163, 184, 0.40);
             border-radius: 16px;
             padding: 18px;
             min-height: 170px;
-            box-shadow: 0 10px 20px rgba(20, 50, 77, 0.08);
+            box-shadow: 0 14px 30px rgba(0, 0, 0, 0.18);
             margin: 8px 0 26px 0;
             animation: fadeUp 0.8s ease-out;
             transition: transform 0.35s ease, box-shadow 0.35s ease, border-color 0.35s ease, background 0.35s ease;
         }
         .feature-card:hover {
             transform: translateY(-6px) scale(1.01);
-            box-shadow: 0 18px 32px rgba(20, 50, 77, 0.14);
-            border-color: #7fa3c7;
-            background: linear-gradient(180deg, #edf5fd 0%, #deebf8 100%);
+            box-shadow: 0 22px 44px rgba(0, 0, 0, 0.26);
+            border-color: rgba(191, 219, 254, 0.75);
         }
         .feature-icon {
             width: 42px;
@@ -992,28 +1318,56 @@ def apply_theme():
             font-size: 0.96rem;
         }
         .section-panel {
-            background: linear-gradient(180deg, #edf4fc 0%, #e0ebf8 100%);
-            border: 1px solid #b1c8e0;
+            /* Match the top feature cards */
+            background:
+              linear-gradient(180deg, rgba(255,255,255,0.72) 0%, rgba(255,255,255,0.64) 100%),
+              radial-gradient(900px 280px at 15% 10%, rgba(59,130,246,0.18), transparent 60%),
+              radial-gradient(760px 300px at 85% 30%, rgba(34,211,238,0.14), transparent 55%),
+              repeating-linear-gradient(135deg, rgba(15,23,42,0.018) 0px, rgba(15,23,42,0.018) 2px, transparent 2px, transparent 10px);
+            border: 1px solid rgba(148, 163, 184, 0.40);
             border-radius: 16px;
             padding: 18px;
             margin: 10px 0 22px 0;
             animation: fadeUp 0.95s ease-out;
-            box-shadow: 0 10px 20px rgba(20, 50, 77, 0.08);
+            box-shadow: 0 14px 30px rgba(0, 0, 0, 0.18);
             transition: transform 0.35s ease, box-shadow 0.35s ease, border-color 0.35s ease;
         }
         .section-panel:hover {
             transform: translateY(-4px);
-            box-shadow: 0 16px 28px rgba(20, 50, 77, 0.12);
-            border-color: #86a9cc;
+            box-shadow: 0 22px 44px rgba(0, 0, 0, 0.22);
+            border-color: rgba(191, 219, 254, 0.75);
         }
         .section-panel h4 {
-            color: #173b5f;
+            color: #000000 !important;
             margin-bottom: 8px;
+            font-weight: 800 !important;
+            font-size: 1.05rem !important;
+            letter-spacing: -0.01em !important;
+            text-shadow: none !important;
+            filter: none !important;
+            mix-blend-mode: normal !important;
+            opacity: 1 !important;
+            -webkit-text-fill-color: #000000 !important;
+        }
+        /* Stronger override: some Streamlit theme rules win otherwise */
+        section.main .section-panel h4,
+        section.main .section-panel h4 span,
+        section.main .section-panel h4 p,
+        section.main .section-panel h4 a {
+            color: #000000 !important;
+            opacity: 1 !important;
+            -webkit-text-fill-color: #000000 !important;
+        }
+        /* Keep headings readable even when selected/highlighted */
+        .section-panel h4::selection {
+            background: rgba(59, 130, 246, 0.25);
+            color: #000000;
         }
         .section-panel p {
-            color: #3f5f7d;
+            color: rgba(30, 41, 59, 0.92) !important;
             line-height: 1.7;
             margin-bottom: 16px;
+            font-weight: 550 !important;
         }
         @keyframes fadeUp {
             from {
@@ -1077,6 +1431,56 @@ def apply_theme():
             border-radius: 18px;
             padding: 22px;
             box-shadow: 0 18px 44px rgba(15, 23, 42, 0.35);
+            position: relative;
+            overflow: hidden;
+        }
+        .exam-shell::before {
+            content: "";
+            position: absolute;
+            inset: 0;
+            background:
+              radial-gradient(800px 260px at 10% 0%, rgba(59,130,246,0.14), transparent 60%),
+              radial-gradient(680px 260px at 90% 30%, rgba(34,211,238,0.10), transparent 55%),
+              repeating-linear-gradient(135deg, rgba(248,250,252,0.025) 0px, rgba(248,250,252,0.025) 2px, transparent 2px, transparent 10px);
+            pointer-events: none;
+            opacity: 0.7;
+        }
+        .exam-shell > * { position: relative; }
+        .exam-shell div[data-testid="stImage"] img {
+            max-height: 260px !important;
+            object-fit: contain !important;
+        }
+
+        .exam-banner {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 12px 14px;
+            margin: 6px 0 14px 0;
+            border-radius: 14px;
+            background: rgba(2, 6, 23, 0.32);
+            border: 1px solid rgba(148, 163, 184, 0.20);
+        }
+        .exam-banner-title {
+            color: rgba(241,245,249,0.95);
+            font-weight: 800;
+            letter-spacing: 0.01em;
+        }
+        .exam-banner-sub {
+            color: rgba(203,213,225,0.88);
+            font-size: 0.92rem;
+            margin-top: 2px;
+        }
+        .exam-chip {
+            background: rgba(59,130,246,0.18);
+            border: 1px solid rgba(191,219,254,0.30);
+            color: rgba(241,245,249,0.92);
+            padding: 7px 10px;
+            border-radius: 999px;
+            font-weight: 750;
+            font-size: 0.88rem;
+            white-space: nowrap;
         }
         .exam-title {
             background: linear-gradient(90deg, #0f172a, #1e293b);
@@ -1098,25 +1502,38 @@ def apply_theme():
             box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
         }
         .question-text {
-            color: #0f172a !important;
-            font-size: 1.45rem;
-            line-height: 1.75;
-            font-weight: 700;
-            margin-bottom: 18px;
-            padding: 18px 20px;
-            background: rgba(219, 234, 254, 0.82);
-            border-radius: 18px;
-            border: 1px solid rgba(255, 255, 255, 0.14);
-            box-shadow: 0 18px 40px rgba(15, 23, 42, 0.10);
+            color: rgba(241, 245, 249, 0.94) !important;
+            font-size: 1.22rem;
+            line-height: 1.65;
+            font-weight: 750;
+            margin-bottom: 16px;
+            padding: 16px 16px;
+            background: rgba(2, 6, 23, 0.30);
+            border-radius: 16px;
+            border: 1px solid rgba(148, 163, 184, 0.20);
+            box-shadow: 0 18px 40px rgba(0, 0, 0, 0.25);
+            text-align: left;
         }
         .memory-display {
-            color: #0f172a !important;
-            background: rgba(219, 234, 254, 0.82);
-            border: 1px solid rgba(255, 255, 255, 0.14);
-            border-radius: 18px;
-            padding: 18px 22px;
-            box-shadow: 0 18px 40px rgba(15, 23, 42, 0.10);
-            margin-bottom: 18px;
+            color: rgba(241, 245, 249, 0.92) !important;
+            background: rgba(2, 6, 23, 0.28);
+            border: 1px solid rgba(148, 163, 184, 0.20);
+            border-radius: 16px;
+            padding: 14px 14px;
+            box-shadow: 0 18px 40px rgba(0, 0, 0, 0.22);
+            margin-bottom: 16px;
+            text-align: left;
+        }
+        .memory-pill {
+            display: inline-block;
+            margin: 4px 6px;
+            padding: 10px 14px;
+            border-radius: 999px;
+            background: rgba(15, 23, 42, 0.85);
+            border: 1px solid rgba(148, 163, 184, 0.22);
+            color: rgba(248, 250, 252, 0.95);
+            font-weight: 800;
+            font-size: 1.03rem;
         }
         div[data-testid="stRadio"] label,
         div[data-testid="stRadio"] p {
@@ -1129,6 +1546,11 @@ def apply_theme():
             padding: 14px 16px !important;
             box-shadow: none !important;
             color: #f8fafc !important;
+            justify-content: flex-start !important;
+            text-align: left !important;
+            align-items: center !important;
+            width: 100% !important;
+            max-width: 100% !important;
         }
         div[data-testid="stRadio"] label:hover {
             background-color: transparent !important;
@@ -1203,6 +1625,7 @@ def apply_theme():
             flex-direction: row !important;
             align-items: center !important;
             gap: 12px !important;
+            justify-content: flex-start !important;
             padding: 10px 14px !important;
             border-radius: 10px !important;
             background-color: transparent !important;
@@ -1291,8 +1714,11 @@ def get_marking_rules(mode):
     }
 
 
-def start_test(mode):
-    st.session_state.questions = generate_test()
+def start_test(mode, test_type="foundation"):
+    st.session_state.current_test_type = test_type
+    st.session_state._just_unlocked_advanced = False
+    st.session_state.show_submit_confirm = False
+    st.session_state.questions = generate_test(test_type)
     st.session_state.answers = {}
     st.session_state.score = None
     st.session_state.test_submitted = False
@@ -1307,6 +1733,7 @@ def start_test(mode):
     st.session_state.review_rows = []
     st.session_state.max_score = 0.0
     st.session_state.score_breakdown = {"positive": 0.0, "negative": 0.0, "partial": 0.0}
+    st.session_state.domain_scores = {}
     st.session_state.tab_switch_violations = 0
     st.session_state.test_mode = mode
     st.session_state.test_duration_seconds = 25 * 60 if mode == "Exam" else 45 * 60
@@ -1329,6 +1756,7 @@ def build_review_sheet_text(review_rows):
                 f"Prompt: {row['prompt']}",
                 f"Your Answer: {row['user_answer']}",
                 f"Correct Answer: {row['correct_answer']}",
+                f"Explanation: {row.get('explanation', 'Not available')}",
                 f"Marks: {row['marks']:.2f}",
                 f"Result: {row['result']}",
                 "",
@@ -1357,6 +1785,36 @@ def submit_test():
     negative_marks = 0.0
     partial_marks = 0.0
     review_rows = []
+    domain_scores = {"logical": 0.0, "mathematical": 0.0, "verbal": 0.0, "applied": 0.0, "memory": 0.0}
+
+    def infer_domain(question: dict) -> str | None:
+        qtype = str(question.get("type", "")).strip().lower()
+        if qtype in {
+            "word_memory",
+            "wm_sequence",
+            "number_memory",
+            "wm_numbers",
+            "image_memory",
+            "wm_image",
+            "grid_memory",
+            "nback",
+            "recall_letter_sequence",
+            "recall_number_sequence",
+            "recall_sequence_order",
+            "recall_add_and_reverse",
+        }:
+            return "memory"
+        if "memory" in qtype:
+            return "memory"
+        if "logical" in qtype:
+            return "logical"
+        if "verbal" in qtype:
+            return "verbal"
+        if "applied" in qtype:
+            return "applied"
+        if "numerical" in qtype or "quant" in qtype or "math" in qtype:
+            return "mathematical"
+        return None
 
     def token_list(raw_text):
         return [item.strip().lower() for item in raw_text.split() if item.strip()]
@@ -1368,7 +1826,7 @@ def submit_test():
         user_set = set(user_items)
         return len(correct_set.intersection(user_set)) / len(correct_set)
 
-    def add_review_row(index, question_type, prompt, user_answer, correct_answer, marks, result):
+    def add_review_row(index, question_type, prompt, user_answer, correct_answer, marks, result, explanation=""):
         review_rows.append(
             {
                 "question_no": index + 1,
@@ -1376,6 +1834,7 @@ def submit_test():
                 "prompt": prompt,
                 "user_answer": user_answer,
                 "correct_answer": correct_answer,
+                "explanation": explanation if explanation else "Not available",
                 "marks": round(marks, 2),
                 "result": result,
             }
@@ -1416,7 +1875,12 @@ def submit_test():
                 str(correct_answer) if correct_answer is not None else "Not Provided",
                 marks,
                 result,
+                q.get("explanation", ""),
             )
+
+            domain = infer_domain(q)
+            if domain is not None:
+                domain_scores[domain] += float(marks)
 
         # -------- TEXT RESPONSE --------
         elif q.get("input_type") == "text":
@@ -1449,7 +1913,12 @@ def submit_test():
                 str(correct_answer) if correct_answer is not None else "Not Provided",
                 marks,
                 result,
+                q.get("explanation", ""),
             )
+
+            domain = infer_domain(q)
+            if domain is not None:
+                domain_scores[domain] += float(marks)
 
         # -------- WORD MEMORY --------
         elif q.get("type") in {"word_memory", "wm_sequence"}:
@@ -1482,7 +1951,9 @@ def submit_test():
                 " ".join(correct_words),
                 marks,
                 result,
+                q.get("explanation", ""),
             )
+            domain_scores["memory"] += float(marks)
 
         # -------- NUMBER MEMORY --------
         elif q.get("type") in {"number_memory", "wm_numbers"}:
@@ -1516,7 +1987,9 @@ def submit_test():
                 correct_text,
                 marks,
                 result,
+                q.get("explanation", ""),
             )
+            domain_scores["memory"] += float(marks)
 
 
         # -------- IMAGE MEMORY --------
@@ -1550,7 +2023,9 @@ def submit_test():
                 " ".join(correct_images),
                 marks,
                 result,
+                q.get("explanation", ""),
             )
+            domain_scores["memory"] += float(marks)
 
 
         # -------- GRID MEMORY --------
@@ -1583,7 +2058,9 @@ def submit_test():
                 " ".join(map(str, sorted(correct_cells))),
                 marks,
                 result,
+                q.get("explanation", ""),
             )
+            domain_scores["memory"] += float(marks)
 
 
         # -------- NBACK / IMAGE ORDER MEMORY --------
@@ -1617,7 +2094,9 @@ def submit_test():
                 " ".join(correct_seq),
                 marks,
                 result,
+                q.get("explanation", ""),
             )
+            domain_scores["memory"] += float(marks)
 
     st.session_state.score = round(score, 2)
     st.session_state.max_score = round(float(len(st.session_state.questions)), 2)
@@ -1628,6 +2107,7 @@ def submit_test():
         "negative": round(negative_marks, 2),
         "partial": round(partial_marks, 2),
     }
+    st.session_state.domain_scores = {k: round(v, 2) for k, v in domain_scores.items()}
 
     if st.session_state.test_start_time is not None:
         st.session_state.time_taken_seconds = int(time.time() - st.session_state.test_start_time)
@@ -1635,6 +2115,20 @@ def submit_test():
         st.session_state.time_taken_seconds = 0
 
     st.session_state.test_submitted = True
+    # Unlock advanced if foundation domain thresholds are met.
+    if st.session_state.get("current_test_type") == "foundation":
+        ds = st.session_state.domain_scores or {}
+        advanced_ready = (
+            ds.get("logical", 0) > 6
+            and ds.get("mathematical", 0) > 6
+            and ds.get("verbal", 0) > 6
+            and ds.get("applied", 0) > 6
+            and ds.get("memory", 0) > 2
+        )
+        if advanced_ready:
+            if not st.session_state.get("advanced_unlocked", False):
+                st.session_state.advanced_unlocked = True
+                st.session_state._just_unlocked_advanced = True
 
 
 def save_submission(username):
@@ -1706,30 +2200,72 @@ def render_header():
     col1, col2, col3, col4, col5, col6 = st.columns([2, 1, 1, 1, 1, 1], gap="medium")
 
     col1.markdown(
-        '<div class="app-brand"><div class="app-logo">🧠</div><div><div style="font-size:1.15rem;font-weight:700;line-height:1.1;">Cognitive Assessment System</div><div style="font-size:0.85rem;color:rgba(248,248,255,0.80);margin-top:4px;">Smart test interface</div></div></div>',
+        """
+        <div class="app-brand">
+          <div class="app-logo" aria-label="App logo">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" role="img" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <linearGradient id="logoGrad" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse">
+                  <stop stop-color="#60A5FA"/>
+                  <stop offset="0.55" stop-color="#3B82F6"/>
+                  <stop offset="1" stop-color="#22D3EE"/>
+                </linearGradient>
+              </defs>
+              <!-- outer ring -->
+              <path d="M12 2.75c-5.11 0-9.25 4.14-9.25 9.25S6.89 21.25 12 21.25 21.25 17.11 21.25 12 17.11 2.75 12 2.75Z"
+                    stroke="url(#logoGrad)" stroke-width="1.6" opacity="0.95"/>
+              <!-- stylized 'C' -->
+              <path d="M14.9 8.5a4.75 4.75 0 1 0 0 7"
+                    stroke="url(#logoGrad)" stroke-width="2.2" stroke-linecap="round"/>
+              <!-- pulse dot -->
+              <circle cx="17.6" cy="12" r="1.2" fill="#E0F2FE" opacity="0.95"/>
+            </svg>
+          </div>
+          <div>
+            <div style="font-size:1.15rem;font-weight:750;line-height:1.1;color:rgba(248,250,252,0.95);">Cognitive Assessment System</div>
+            <div style="font-size:0.85rem;color:rgba(203,213,225,0.82);margin-top:4px;">Smart test interface</div>
+          </div>
+        </div>
+        """,
         unsafe_allow_html=True,
     )
 
-    if col2.button("Home", use_container_width=True):
+    if col2.button("Home", use_container_width=True, key="nav_home"):
         st.session_state.current_page = "home"
-    if col3.button("Signup", use_container_width=True):
+    if col3.button("Signup", use_container_width=True, key="nav_signup"):
         st.session_state.current_page = "signup"
     if col4.button("Login", use_container_width=True, key="nav_login"):
         st.session_state.current_page = "login"
-    if col5.button("Resources", use_container_width=True):
+    if col5.button("Resources", use_container_width=True, key="nav_resources"):
         st.session_state.current_page = "resources"
 
     if st.session_state.logged_in:
-        col6.markdown(
-            f"<div style='text-align:right;padding-top:8px;color:#f8fafc;'>Logged in: <strong>{st.session_state.username}</strong></div>",
-            unsafe_allow_html=True,
-        )
-        if col6.button("Logout", use_container_width=True):
-            reset_test_state()
-            st.session_state.logged_in = False
-            st.session_state.username = None
-            st.session_state.current_page = "home"
-            st.rerun()
+        # Account menu (top-right)
+        with col6:
+            username = str(st.session_state.username or "")
+            initial = (username[:1].upper() if username else "A")
+            with st.popover(f"{initial}", use_container_width=False, key="account_menu"):
+                st.markdown(
+                    f"<div style='font-weight:750;color:rgba(241,245,249,0.95);margin-bottom:6px;'>Account</div>"
+                    f"<div style='color:rgba(203,213,225,0.92);margin-bottom:12px;'>Signed in as <strong>{username}</strong></div>",
+                    unsafe_allow_html=True,
+                )
+                if st.button("Dashboard", use_container_width=True, key="account_dashboard"):
+                    st.session_state.current_page = "home"
+                    st.rerun()
+                if st.button("History", use_container_width=True, key="account_history"):
+                    st.session_state.current_page = "history"
+                    st.rerun()
+                if st.button("Resources", use_container_width=True, key="account_resources"):
+                    st.session_state.current_page = "resources"
+                    st.rerun()
+                st.markdown("<div style='height:6px;'></div>", unsafe_allow_html=True)
+                if st.button("Logout", use_container_width=True, key="account_logout"):
+                    reset_test_state()
+                    st.session_state.logged_in = False
+                    st.session_state.username = None
+                    st.session_state.current_page = "home"
+                    st.rerun()
 
 
 def build_sample_questions_pdf():
@@ -2127,8 +2663,8 @@ def render_home_page():
 
     action_col1, action_col2 = st.columns(2)
 
-    if action_col1.button("Generate Test", type="primary", use_container_width=True):
-        start_test(st.session_state.home_test_mode)
+    if action_col1.button("Take Test", type="primary", use_container_width=False, key="take_test_home"):
+        start_test(st.session_state.home_test_mode, "foundation")
         st.rerun()
 
     if action_col2.button("History", use_container_width=True):
@@ -2200,16 +2736,92 @@ def render_history_page():
 
 
 def render_signup_page():
-    st.subheader("Create Account")
-    username = st.text_input("Username", key="signup_username")
-    password = st.text_input("Password", type="password", key="signup_password")
+    st.markdown(
+        """
+        <style>
+        /* Signup card styling aligned with Login */
+        .st-key-signup_username .stTextInput input,
+        .st-key-signup_password .stTextInput input {
+            background-color: rgba(248, 250, 252, 0.92) !important;
+            border: 1px solid rgba(148, 163, 184, 0.45) !important;
+            color: #0f172a !important;
+            -webkit-text-fill-color: #0f172a !important;
+            border-radius: 12px !important;
+            padding: 12px 14px !important;
+            font-size: 1rem !important;
+            font-weight: 550 !important;
+        }
+        .st-key-signup_username .stTextInput input:focus,
+        .st-key-signup_password .stTextInput input:focus {
+            border-color: #60a5fa !important;
+            background-color: #ffffff !important;
+            box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.25) !important;
+        }
+        .st-key-signup_username .stTextInput label,
+        .st-key-signup_password .stTextInput label,
+        .st-key-signup_username .stTextInput label p,
+        .st-key-signup_password .stTextInput label p {
+            color: rgba(226, 232, 240, 0.92) !important;
+            font-weight: 650 !important;
+            font-size: 0.95rem !important;
+            margin-bottom: 6px !important;
+        }
+        .signup-title {
+            text-align: center;
+            font-size: 1.8rem;
+            font-weight: 800;
+            color: #f8fafc;
+            margin-bottom: 6px;
+            letter-spacing: -0.01em;
+        }
+        .signup-subtitle {
+            text-align: center;
+            color: rgba(203, 213, 225, 0.92);
+            font-size: 0.95rem;
+            margin-bottom: 24px;
+        }
+        .st-key-signup_submit button {
+            background: #3b82f6 !important;
+            border: none !important;
+            border-radius: 10px !important;
+            height: 44px !important;
+            font-size: 1rem !important;
+            font-weight: 700 !important;
+            color: white !important;
+        }
+        .st-key-signup_submit button:hover {
+            background: #2563eb !important;
+            transform: translateY(-1px) !important;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
 
-    if st.button("Signup"):
-        if create_user(username, password):
-            st.success("Account created successfully. You can now login.")
-            st.session_state.current_page = "login"
-        else:
-            st.error("Username already exists")
+    # Center the signup form using columns (same as login)
+    _, center_col, _ = st.columns([1, 1.4, 1], gap="medium")
+    with center_col:
+        with st.container(border=True):
+            st.markdown(
+                """
+                <div class='signup-title'>Create Account</div>
+                <div class='signup-subtitle'>Set up your credentials to start practicing.</div>
+                """,
+                unsafe_allow_html=True,
+            )
+
+            username = st.text_input("Username", key="signup_username", placeholder="e.g. student_01")
+            password = st.text_input("Password", type="password", key="signup_password", placeholder="••••••••")
+
+            st.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)
+
+            if st.button("Signup", type="primary", key="signup_submit", use_container_width=True):
+                if create_user(username, password):
+                    st.success("Account created successfully. You can now login.")
+                    st.session_state.current_page = "login"
+                    st.rerun()
+                else:
+                    st.error("Username already exists")
 
 
 def render_exam_page(username):
@@ -2257,11 +2869,109 @@ def render_exam_page(username):
             st.session_state.submission_saved = True
 
         st.subheader("Test Summary")
+        if st.session_state.get("_just_unlocked_advanced", False):
+            st.success("Foundation passed. Advanced test unlocked in your dashboard.")
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("Score", f"{st.session_state.score:.2f}/{st.session_state.max_score:.2f}")
         m2.metric("Questions Answered", st.session_state.attempted_questions)
         m3.metric("Time Taken", format_duration(st.session_state.time_taken_seconds))
         m4.metric("Tab Switch Violations", st.session_state.tab_switch_violations)
+
+        ds = st.session_state.domain_scores or {}
+        eligibility = "Eligible for Advanced" if st.session_state.get("advanced_unlocked", False) else "Not yet eligible"
+        st.markdown(
+            f"<div style='margin-top:10px;padding:12px 14px;border-radius:14px;background:rgba(2,6,23,0.28);border:1px solid rgba(148,163,184,0.20);'>"
+            f"<div style='font-weight:800;color:rgba(241,245,249,0.95);'>Eligibility</div>"
+            f"<div style='color:rgba(203,213,225,0.9);margin-top:6px;line-height:1.6;'>"
+            f"Requirement (Foundation): Logical &gt; <strong>6</strong>, Math &gt; <strong>6</strong>, Verbal &gt; <strong>6</strong>, Applied &gt; <strong>6</strong>, Memory &gt; <strong>2</strong>."
+            f"<br/>Your domain scores: "
+            f"Logical <strong>{ds.get('logical', 0):.2f}</strong> · "
+            f"Math <strong>{ds.get('mathematical', 0):.2f}</strong> · "
+            f"Verbal <strong>{ds.get('verbal', 0):.2f}</strong> · "
+            f"Applied <strong>{ds.get('applied', 0):.2f}</strong> · "
+            f"Memory <strong>{ds.get('memory', 0):.2f}</strong>."
+            f"<br/>Status: <strong>{eligibility}</strong></div>"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+
+        # ML recommendations (shown after every submission)
+        with st.container(border=True):
+            st.markdown("#### Recommendations")
+            use_hw = st.toggle(
+                "Use Arduino sensor (MAX30105)",
+                value=False,
+                help="Reads Avg BPM from your Arduino serial output (115200 baud).",
+            )
+
+            heart_rate_bpm = 90.0
+            stress_level = 0.5
+            hw_status = None
+
+            if use_hw:
+                ports = _list_serial_ports()
+                c1, c2, c3 = st.columns([1.1, 0.7, 1.2])
+                default_port = ports[0] if ports else "COM5"
+                port = c1.selectbox("COM Port", options=ports if ports else [default_port], index=0)
+                baud = c2.number_input("Baud", min_value=1200, max_value=2000000, value=115200, step=100)
+
+                try:
+                    ser = _get_serial_connection(str(port), int(baud))
+                    sample = _read_latest_sensor_sample(ser)
+                    if sample.get("no_finger"):
+                        hw_status = "No finger detected. Place finger steadily."
+                    else:
+                        avg_bpm = sample.get("avg_bpm")
+                        if avg_bpm is not None and avg_bpm > 0:
+                            heart_rate_bpm = float(avg_bpm)
+                            stress_level = float(_stress_from_bpm(heart_rate_bpm))
+                            hw_status = f"Live sensor: Avg BPM={int(heart_rate_bpm)} (stress≈{stress_level:.2f})"
+                        else:
+                            hw_status = "Waiting for sensor data..."
+                except Exception as e:
+                    hw_status = f"Sensor read error: {e}"
+
+                if hw_status:
+                    st.caption(hw_status)
+            else:
+                hr_col, stress_col, _ = st.columns([1, 1, 1])
+                heart_rate_bpm = float(
+                    hr_col.number_input(
+                        "Heart rate (bpm)",
+                        min_value=30,
+                        max_value=220,
+                        value=90,
+                        step=1,
+                        help="Temporary manual value until hardware is connected.",
+                    )
+                )
+                stress_level = float(
+                    stress_col.slider(
+                        "Stress level (0–1)",
+                        min_value=0.0,
+                        max_value=1.0,
+                        value=0.5,
+                        step=0.01,
+                        help="Temporary manual value until hardware is connected.",
+                    )
+                )
+
+            label, recs = predict_with_recommendations(
+                logical=float(ds.get("logical", 0.0)),
+                mathematical=float(ds.get("mathematical", 0.0)),
+                verbal=float(ds.get("verbal", 0.0)),
+                memory=float(ds.get("memory", 0.0)),
+                heart_rate_bpm=float(heart_rate_bpm),
+                stress_level=float(stress_level),
+            )
+
+            st.markdown(
+                f"<div style='margin-top:6px;color:rgba(203,213,225,0.9);'>Predicted performance band: "
+                f"<strong style='color:rgba(241,245,249,0.95);'>{label}</strong></div>",
+                unsafe_allow_html=True,
+            )
+            for r in recs:
+                st.write(f"- {r}")
 
         b1, b2, b3 = st.columns(3)
         b1.metric("Positive Marks", st.session_state.score_breakdown.get("positive", 0.0))
@@ -2334,12 +3044,25 @@ def render_exam_page(username):
         question = st.session_state.questions[current_idx]
         st.markdown(f"**Question {current_idx + 1} of {total_questions}**")
 
+        st.markdown(
+            f"""
+            <div class="exam-banner">
+              <div>
+                <div class="exam-banner-title">Exam Workspace</div>
+                <div class="exam-banner-sub">Read carefully, select one option, then use Next/Previous. Submit only on the final question.</div>
+              </div>
+              <div class="exam-chip">{st.session_state.test_mode} mode</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
         if question.get("passage"):
             st.info(question["passage"])
 
         image_path = _resolve_question_image_path(question.get("image"))
         if image_path is not None:
-            st.image(str(image_path), use_container_width=True)
+            st.image(str(image_path), width=520)
 
         if question.get("type") in {"recall_letter_sequence", "recall_number_sequence", "recall_sequence_order", "recall_add_and_reverse"}:
             render_recall_memory_question(current_idx, question)
@@ -2445,29 +3168,70 @@ def render_exam_page(username):
             for flag in ["show_numbers", "show_words", "show_images", "show_grid", "show_nback"]
         ) or st.session_state.get(f"recall_{current_idx}", False)
 
-        if not memory_display_active:
-            st.text_input(
-                "Type submit to confirm final submission",
-                key="submit_confirmation_text",
-                placeholder="submit",
-            )
+        is_last_question = current_idx == (total_questions - 1)
+        nav_disabled = memory_display_active
 
-            nav_col1, nav_col2, nav_col3 = st.columns([1, 1, 2])
-            if nav_col1.button("Previous", use_container_width=True, disabled=current_idx == 0):
-                st.session_state.current_question_idx = current_idx - 1
-                st.rerun()
-            if nav_col2.button("Next", use_container_width=True, disabled=current_idx == total_questions - 1):
-                st.session_state.current_question_idx = current_idx + 1
-                st.rerun()
+        # Only allow final submission flow on the FINAL question (and only when not in memorize step).
+        if not is_last_question:
+            st.session_state.submit_confirmation_text = ""
+            st.session_state.show_submit_confirm = False
+        nav_col1, nav_col2, nav_col3 = st.columns([1, 1, 2])
+        if nav_col1.button(
+            "Previous",
+            use_container_width=True,
+            disabled=nav_disabled or current_idx == 0,
+        ):
+            st.session_state.current_question_idx = current_idx - 1
+            st.rerun()
+        if nav_col2.button(
+            "Next",
+            use_container_width=True,
+            disabled=nav_disabled or current_idx == total_questions - 1,
+        ):
+            st.session_state.current_question_idx = current_idx + 1
+            st.rerun()
+
+        if is_last_question and not nav_disabled:
             if nav_col3.button(
                 "Submit Test",
                 type="primary",
-                use_container_width=True,
+                use_container_width=False,
                 key="submit_test_main",
-                disabled=st.session_state.submit_confirmation_text.strip().lower() != "submit",
             ):
-                st.session_state.auto_submitted = False
-                submit_test()
+                st.session_state.show_submit_confirm = True
+
+            if st.session_state.get("show_submit_confirm", False):
+                st.markdown("<div style='height:10px;'></div>", unsafe_allow_html=True)
+                with st.container(border=True):
+                    st.markdown(
+                        "<div style='font-weight:800;color:rgba(241,245,249,0.95);font-size:1.05rem;'>Confirm submission</div>"
+                        "<div style='color:rgba(203,213,225,0.9);margin-top:4px;'>Type <strong>submit</strong> and press <strong>Enter</strong>, then click <strong>Confirm &amp; Submit</strong>.</div>",
+                        unsafe_allow_html=True,
+                    )
+                    st.text_input(
+                        "Confirmation",
+                        key="submit_confirmation_text",
+                        placeholder="submit",
+                    )
+                    c1, c2 = st.columns([1, 1])
+                    if c1.button("Cancel", use_container_width=False, key="submit_cancel"):
+                        st.session_state.show_submit_confirm = False
+                        st.session_state.submit_confirmation_text = ""
+                        st.rerun()
+                    if c2.button(
+                        "Confirm & Submit",
+                        type="primary",
+                        use_container_width=False,
+                        key="submit_confirm_final",
+                        disabled=st.session_state.submit_confirmation_text.strip().lower() != "submit",
+                    ):
+                        st.session_state.auto_submitted = False
+                        submit_test()
+                        st.session_state.show_submit_confirm = False
+                        st.rerun()
+        else:
+            # Keep layout stable, but hide the action on non-final questions.
+            nav_col3.markdown("<div style='height:44px;'></div>", unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
 
     with right_col:
@@ -2499,54 +3263,141 @@ def render_login_page():
         st.markdown(
             """
             <style>
-            [data-testid="column"] {
-                padding: 0 !important;
+            /* Login card + readable text (avoid :has() so it works everywhere) */
+            div[data-testid="stContainer"]{
+                background: rgba(15, 23, 42, 0.55) !important;
+                border: 1px solid rgba(148, 163, 184, 0.28) !important;
+                border-radius: 20px !important;
+                padding: 28px 22px !important;
+                box-shadow: 0 18px 40px rgba(0, 0, 0, 0.35) !important;
+                backdrop-filter: blur(14px) !important;
+                -webkit-backdrop-filter: blur(14px) !important;
+            }
+
+            /* Inputs (scoped by widget keys) */
+            .st-key-login_username .stTextInput input,
+            .st-key-login_password .stTextInput input {
+                background-color: rgba(248, 250, 252, 0.92) !important;
+                border: 1px solid rgba(148, 163, 184, 0.45) !important;
+                color: #0f172a !important;
+                -webkit-text-fill-color: #0f172a !important;
+                border-radius: 12px !important;
+                padding: 12px 14px !important;
+                font-size: 1rem !important;
+                font-weight: 550 !important;
+            }
+            .st-key-login_username .stTextInput input::placeholder,
+            .st-key-login_password .stTextInput input::placeholder {
+                color: #64748b !important;
+                -webkit-text-fill-color: #64748b !important;
+            }
+            .st-key-login_username .stTextInput input:focus,
+            .st-key-login_password .stTextInput input:focus {
+                border-color: #60a5fa !important;
+                background-color: #ffffff !important;
+                box-shadow: 0 0 0 3px rgba(96, 165, 250, 0.25) !important;
+            }
+
+            /* Labels must be light on dark background */
+            .st-key-login_username .stTextInput label,
+            .st-key-login_password .stTextInput label,
+            .st-key-login_username .stTextInput label p,
+            .st-key-login_password .stTextInput label p {
+                color: rgba(226, 232, 240, 0.92) !important;
+                font-weight: 650 !important;
+                font-size: 0.95rem !important;
+                margin-bottom: 6px !important;
+            }
+            .login-title {
+                text-align: center;
+                font-size: 1.8rem;
+                font-weight: 800;
+                color: #f8fafc;
+                margin-bottom: 6px;
+            }
+            .login-subtitle {
+                text-align: center;
+                color: rgba(203, 213, 225, 0.92);
+                font-size: 0.95rem;
+                margin-bottom: 24px;
+            }
+            /* Specific button styling for login */
+            [class*="st-key-login_submit"] button {
+                background: #3b82f6 !important;
+                border: none !important;
+                border-radius: 10px !important;
+                height: 44px !important;
+                font-size: 1rem !important;
+                font-weight: 700 !important;
+                color: #ffffff !important;
+                transition: all 0.2s ease !important;
+            }
+            [class*="st-key-login_submit"] button:hover {
+                background: #2563eb !important;
+                transform: translateY(-1px) !important;
+            }
+            [class*="st-key-login_back"] button {
+                background: rgba(148, 163, 184, 0.16) !important;
+                border: 1px solid rgba(148, 163, 184, 0.32) !important;
+                color: rgba(241, 245, 249, 0.92) !important;
+                border-radius: 10px !important;
+                height: 44px !important;
+                font-size: 1rem !important;
+                font-weight: 600 !important;
+                transition: all 0.2s ease !important;
+            }
+            [class*="st-key-login_back"] button:hover {
+                background: rgba(148, 163, 184, 0.22) !important;
+                transform: translateY(-1px) !important;
             }
             </style>
             """,
             unsafe_allow_html=True,
         )
         
-        _, center_col, _ = st.columns([1, 1.2, 1], gap="small")
+        # Center the login form using columns
+        _, center_col, _ = st.columns([1, 1.4, 1], gap="medium")
         
         with center_col:
-            st.markdown(
-                """
-                <div class='page-card'>
-                    <div class='page-card-title'>Welcome Back</div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-            
-            username = st.text_input(
-                "Username",
-                key="login_username",
-                placeholder="Enter your username",
-            )
-            password = st.text_input(
-                "Password",
-                type="password",
-                key="login_password",
-                placeholder="Enter your password",
-            )
-            
-            col1, col2 = st.columns([1, 1])
-            with col1:
-                if st.button("Login", type="primary", key="login_submit", use_container_width=True):
-                    user = login_user(username, password)
-                    if user:
-                        st.session_state.logged_in = True
-                        st.session_state.username = username
-                        st.success("Login successful")
+            with st.container(border=True):
+                st.markdown("<div class='login-marker'></div>", unsafe_allow_html=True)
+                st.markdown(
+                    """
+                    <div class='login-title'>Welcome Back</div>
+                    <div class='login-subtitle'>Enter your credentials to access your dashboard</div>
+                    """,
+                    unsafe_allow_html=True,
+                )
+                
+                username = st.text_input(
+                    "Username",
+                    key="login_username",
+                    placeholder="e.g. student_01",
+                )
+                password = st.text_input(
+                    "Password",
+                    type="password",
+                    key="login_password",
+                    placeholder="••••••••",
+                )
+                
+                st.markdown("<div style='height: 12px;'></div>", unsafe_allow_html=True)
+                
+                sub_c1, sub_c2 = st.columns([1, 1])
+                with sub_c1:
+                    if st.button("Login", type="primary", key="login_submit", use_container_width=True):
+                        user = login_user(username, password)
+                        if user:
+                            st.session_state.logged_in = True
+                            st.session_state.username = username
+                            st.success("Authentication successful. Redirecting...")
+                            st.rerun()
+                        else:
+                            st.error("Invalid username or password. Please try again.")
+                with sub_c2:
+                    if st.button("Return to Home", key="login_back", use_container_width=True):
+                        st.session_state.current_page = "home"
                         st.rerun()
-                    else:
-                        st.error("Invalid login")
-            
-            with col2:
-                if st.button("Back to Home", key="login_back", use_container_width=True):
-                    st.session_state.current_page = "home"
-                    st.rerun()
         
         return
 
@@ -2562,29 +3413,21 @@ def render_login_page():
         horizontal=True,
     )
 
-    if st.button("Generate Test", type="primary"):
-        start_test(st.session_state.login_test_mode)
+    btn_col1, btn_col2 = st.columns([1, 1])
+    if btn_col1.button("Take Test", type="primary", use_container_width=False, key="take_test_dashboard"):
+        start_test(st.session_state.login_test_mode, "foundation")
         st.rerun()
-
-    cursor.execute(
-        "SELECT score,time_taken_seconds,date FROM test_history WHERE username=? ORDER BY id DESC",
-        (username,),
-    )
-    history = cursor.fetchall()
-
-    st.subheader("Previous Test History")
-    if history:
-        history_rows = [
-            {
-                "Score": row[0],
-                "Time Taken": format_duration(row[1] if row[1] is not None else 0),
-                "Date": row[2],
-            }
-            for row in history
-        ]
-        st.table(history_rows)
+    if st.session_state.get("advanced_unlocked", False):
+        if btn_col2.button("Take Advanced Test", use_container_width=False, key="take_advanced_dashboard"):
+            start_test(st.session_state.login_test_mode, "advanced")
+            st.rerun()
     else:
-        st.write("No previous history found.")
+        btn_col2.markdown(
+            "<div style='margin-top:8px;color:rgba(203,213,225,0.88);font-size:0.9rem;'>Advanced test unlocks after passing Foundation.</div>",
+            unsafe_allow_html=True,
+        )
+
+    # History is available from the Account menu.
 
 
 init_state()
