@@ -6,6 +6,7 @@ import time
 from datetime import datetime
 from pathlib import Path
 import re
+import random
 import pandas as pd
 import altair as alt
 from login import create_user, login_user
@@ -67,6 +68,194 @@ def _resolve_question_image_path(image_ref):
             return matched
 
     return None
+
+
+def run_memory_display_countdown(state_key, seconds=5):
+    timer_key = f"{state_key}_timer_start"
+    if timer_key not in st.session_state:
+        st.session_state[timer_key] = time.time()
+
+    elapsed = int(time.time() - st.session_state[timer_key])
+    remaining = max(0, seconds - elapsed)
+    st.markdown(
+        f"<div style='color:#cbd5e1;font-size:0.95rem;margin-bottom:8px;'>Memorize for {remaining} second{'s' if remaining != 1 else ''}...</div>",
+        unsafe_allow_html=True,
+    )
+
+    if remaining > 0:
+        time.sleep(1)
+        st.rerun()
+        return True
+
+    st.session_state.pop(timer_key, None)
+    return False
+
+
+def render_recall_memory_question(question_idx, question):
+    state_key = f"recall_{question_idx}"
+    if state_key not in st.session_state:
+        st.session_state[state_key] = True
+
+    if st.session_state.get(state_key, False):
+        st.markdown(
+            f"<div class='question-text'>Memorize the following:</div>",
+            unsafe_allow_html=True,
+        )
+        memory_display = question.get("memory_display", "")
+        memory_items = [item.strip() for item in memory_display.split(",") if item.strip()]
+        memory_html = "".join(
+            [f"<span style='display:inline-block;margin:4px 6px;padding:10px 14px;border-radius:999px;background:#0f172a;color:#f8fafc;font-weight:700;font-size:1.1rem;'>{item}</span>" for item in memory_items]
+        )
+        st.markdown(
+            f"<div class='memory-display'>{memory_html}</div>",
+            unsafe_allow_html=True,
+        )
+        if run_memory_display_countdown(state_key, 5):
+            return False
+        st.session_state[state_key] = False
+        st.rerun()
+        return False
+
+    st.markdown(
+        f"<div class='question-text'>{question.get('question', '')}</div>",
+        unsafe_allow_html=True,
+    )
+    options = question.get("options", [])
+    selected_label = st.session_state.get(f"recall_answer_{question_idx}")
+
+    for option_idx, option in enumerate(options):
+        is_selected = selected_label == option
+        button_label = f"{'◉' if is_selected else '◯'} {option}"
+        if st.button(button_label, key=f"recall_option_{question_idx}_{option_idx}"):
+            st.session_state[f"recall_answer_{question_idx}"] = option
+            st.session_state.answers[question_idx] = option
+            st.rerun()
+
+    return True
+
+
+def number_memory_test(question_idx):
+    if f"numbers_{question_idx}" not in st.session_state:
+        st.session_state[f"numbers_{question_idx}"] = [random.randint(1, 9) for _ in range(5)]
+        st.session_state[f"show_numbers_{question_idx}"] = True
+
+    if st.session_state.get(f"show_numbers_{question_idx}", False):
+        numbers = st.session_state[f"numbers_{question_idx}"]
+        badges = "".join([f"<span class='num-badge'>{n}</span>" for n in numbers])
+        st.markdown("<div style='margin:12px 0;'>Memorize these numbers:</div>", unsafe_allow_html=True)
+        st.markdown(f"<div style='display:flex;gap:8px;flex-wrap:wrap;'>{badges}</div>", unsafe_allow_html=True)
+        if run_memory_display_countdown(f"show_numbers_{question_idx}", 5):
+            return
+        st.session_state[f"show_numbers_{question_idx}"] = False
+        st.rerun()
+    else:
+        st.text_input(
+            "Enter the numbers in order:",
+            key=f"user_answer_{question_idx}",
+            placeholder="e.g. 3 8 1 7 4",
+        )
+
+
+def word_memory_test(question_idx):
+    if f"memory_words_{question_idx}" not in st.session_state:
+        words = ["apple", "tree", "car", "book", "dog", "pen", "chair", "phone"]
+        st.session_state[f"memory_words_{question_idx}"] = random.sample(words, 4)
+        st.session_state[f"show_words_{question_idx}"] = True
+
+    if st.session_state.get(f"show_words_{question_idx}", False):
+        words = st.session_state[f"memory_words_{question_idx}"]
+        st.markdown("<div style='margin:12px 0;'>Memorize these words:</div>", unsafe_allow_html=True)
+        st.markdown("<div style='display:flex;gap:12px;flex-wrap:wrap;'>" + "".join([f"<span class='num-badge'>{w}</span>" for w in words]) + "</div>", unsafe_allow_html=True)
+        if run_memory_display_countdown(f"show_words_{question_idx}", 5):
+            return
+        st.session_state[f"show_words_{question_idx}"] = False
+        st.rerun()
+    else:
+        st.text_input(
+            "Enter the words separated by space:",
+            key=f"user_answer_{question_idx}",
+            placeholder="e.g. apple tree car book",
+        )
+
+
+def image_memory_test(question_idx):
+    images = ["dog", "car", "apple", "tree", "cat", "ball", "book", "house"]
+    if f"shown_images_{question_idx}" not in st.session_state:
+        st.session_state[f"shown_images_{question_idx}"] = random.sample(images, 3)
+        st.session_state[f"show_images_{question_idx}"] = True
+
+    if st.session_state.get(f"show_images_{question_idx}", False):
+        st.markdown("<div style='margin:12px 0;'>Memorize these images:</div>", unsafe_allow_html=True)
+        image_html = "".join([f"<span class='num-badge'>{img}</span>" for img in st.session_state[f"shown_images_{question_idx}"]])
+        st.markdown(f"<div style='display:flex;gap:8px;flex-wrap:wrap;'>{image_html}</div>", unsafe_allow_html=True)
+        if run_memory_display_countdown(f"show_images_{question_idx}", 5):
+            return
+        st.session_state[f"show_images_{question_idx}"] = False
+        st.rerun()
+    else:
+        st.text_input(
+            "Enter the image labels separated by space:",
+            key=f"user_answer_{question_idx}",
+            placeholder="e.g. dog car apple",
+        )
+
+
+def nback_memory_test(question_idx):
+    images = ["dog", "car", "apple", "tree", "cat", "house", "ball", "book"]
+    if f"nback_images_{question_idx}" not in st.session_state:
+        st.session_state[f"nback_images_{question_idx}"] = random.sample(images, 4)
+        st.session_state[f"show_nback_{question_idx}"] = True
+
+    if st.session_state.get(f"show_nback_{question_idx}", False):
+        st.markdown("<div style='margin:12px 0;'>Memorize these images in order:</div>", unsafe_allow_html=True)
+        image_html = "".join([f"<span class='num-badge'>{img}</span>" for img in st.session_state[f"nback_images_{question_idx}"]])
+        st.markdown(f"<div style='display:flex;gap:8px;flex-wrap:wrap;'>{image_html}</div>", unsafe_allow_html=True)
+        if run_memory_display_countdown(f"show_nback_{question_idx}", 5):
+            return
+        st.session_state[f"show_nback_{question_idx}"] = False
+        st.rerun()
+    else:
+        st.text_input(
+            "Enter the image sequence separated by space:",
+            key=f"user_answer_{question_idx}",
+            placeholder="e.g. dog car apple tree",
+        )
+
+
+def grid_memory_test(question_idx):
+    grid_size = 3
+    total_cells = grid_size * grid_size
+    if f"grid_pattern_{question_idx}" not in st.session_state:
+        st.session_state[f"grid_pattern_{question_idx}"] = random.sample(range(total_cells), 3)
+        st.session_state[f"show_grid_{question_idx}"] = True
+        st.session_state[f"grid_answer_{question_idx}"] = []
+
+    if st.session_state.get(f"show_grid_{question_idx}", False):
+        st.markdown("<div style='margin:12px 0;'>Memorize the highlighted grid cells:</div>", unsafe_allow_html=True)
+        for i in range(total_cells):
+            if i % grid_size == 0:
+                cols = st.columns(grid_size)
+            symbol = "🟩" if i in st.session_state[f"grid_pattern_{question_idx}"] else "⬜"
+            cols[i % grid_size].markdown(f"# {symbol}")
+        if run_memory_display_countdown(f"show_grid_{question_idx}", 5):
+            return
+        st.session_state[f"show_grid_{question_idx}"] = False
+        st.rerun()
+    else:
+        st.markdown("<div style='margin:12px 0;'>Select the cells you remember:</div>", unsafe_allow_html=True)
+        selected = set(st.session_state.get(f"grid_answer_{question_idx}", []))
+        for i in range(total_cells):
+            if i % grid_size == 0:
+                cols = st.columns(grid_size)
+            symbol = "🟩" if i in selected else "⬜"
+            if cols[i % grid_size].button(symbol, key=f"grid_cell_{question_idx}_{i}"):
+                if i in selected:
+                    selected.remove(i)
+                else:
+                    selected.add(i)
+                st.session_state[f"grid_answer_{question_idx}"] = list(selected)
+                st.rerun()
+        st.session_state[f"user_answer_{question_idx}"] = list(selected)
 
 
 def _is_mcq_answer_correct(question, user_answer, correct_answer):
@@ -562,11 +751,123 @@ def apply_theme():
         .app-header {
             background: linear-gradient(90deg, #102A43, #243B53);
             color: white;
-            border-radius: 10px;
-            padding: 10px 18px;
-            margin-bottom: 12px;
-            box-shadow: 0 12px 24px rgba(15, 23, 42, 0.12);
+            border-radius: 14px;
+            padding: 14px 22px;
+            margin-bottom: 16px;
+            box-shadow: 0 14px 30px rgba(15, 23, 42, 0.18);
             animation: fadeUp 0.55s ease-out;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 18px;
+        }
+        .app-brand {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+            font-weight: 700;
+            font-size: 1.2rem;
+        }
+        .app-logo {
+            width: 44px;
+            height: 44px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 14px;
+            background: rgba(255, 255, 255, 0.16);
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            font-size: 1.15rem;
+        }
+        .app-nav {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            flex-wrap: wrap;
+        }
+        .app-nav .stButton button {
+            background: rgba(255, 255, 255, 0.12) !important;
+            color: #f8fafc !important;
+            border: 1px solid rgba(255, 255, 255, 0.2) !important;
+            border-radius: 999px !important;
+            padding: 10px 18px !important;
+            min-width: auto !important;
+        }
+        .app-nav .stButton button:hover {
+            background: rgba(255, 255, 255, 0.18) !important;
+        }
+        .app-nav .stButton button:active {
+            transform: translateY(1px) !important;
+        }
+        .app-header-left {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        .stTextInput {
+            display: flex !important;
+            justify-content: center !important;
+        }
+        .stTextInput input,
+        .stTextInput textarea {
+            max-width: 100% !important;
+            width: 100% !important;
+            border-radius: 12px !important;
+            background-color: rgba(255, 255, 255, 0.92) !important;
+            border: 1px solid rgba(59, 130, 246, 0.25) !important;
+            padding: 12px 16px !important;
+            font-size: 0.95rem !important;
+            color: #0f172a !important;
+            transition: border-color 0.3s ease, box-shadow 0.3s ease !important;
+        }
+        .stTextInput input:focus,
+        .stTextInput textarea:focus {
+            border-color: rgba(59, 130, 246, 0.6) !important;
+            box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.1) !important;
+        }
+        .stTextInput > div {
+            width: 100% !important;
+        }
+        .stTextInput label {
+            width: 100% !important;
+            color: #0f172a !important;
+            font-weight: 600 !important;
+            margin-bottom: 8px !important;
+        }
+        .page-card {
+            background: rgba(219, 234, 254, 0.95);
+            border: 1px solid rgba(59, 130, 246, 0.35);
+            border-radius: 24px;
+            padding: 36px 40px;
+            box-shadow: 0 20px 60px rgba(59, 130, 246, 0.12);
+            max-width: 460px;
+            width: 100%;
+            margin: 0 auto;
+        }
+        .page-card-title {
+            color: #0f172a;
+            font-size: 2.2rem;
+            font-weight: 700;
+            margin-bottom: 28px;
+            text-align: center;
+        }
+        .login-form {
+            display: flex;
+            flex-direction: column;
+            gap: 18px;
+        }
+        .login-input-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .login-input-label {
+            color: #0f172a;
+            font-weight: 600;
+            font-size: 0.95rem;
+        }
+        .login-button {
+            margin-top: 10px;
         }
         .home-card {
             background: #f7f9fb;
@@ -771,33 +1072,86 @@ def apply_theme():
             margin-bottom: 10px;
         }
         .exam-shell {
-            background: #f8fbff;
-            border: 1px solid #d9e2ec;
-            border-radius: 12px;
-            padding: 18px;
+            background: linear-gradient(180deg, rgba(15, 23, 42, 0.96), rgba(30, 41, 59, 0.98));
+            border: 1px solid rgba(148, 163, 184, 0.24);
+            border-radius: 18px;
+            padding: 22px;
+            box-shadow: 0 18px 44px rgba(15, 23, 42, 0.35);
         }
         .exam-title {
-            background: linear-gradient(90deg, #102A43, #243B53);
-            color: #ffffff;
-            border-radius: 10px;
-            padding: 8px 12px;
-            margin-bottom: 10px;
-            font-weight: 600;
+            background: linear-gradient(90deg, #0f172a, #1e293b);
+            color: #f8fafc;
+            border-radius: 14px;
+            padding: 12px 16px;
+            margin-bottom: 14px;
+            font-weight: 700;
+            letter-spacing: 0.02em;
         }
         .palette-title {
-            background: #243B53;
-            color: #ffffff;
-            border-radius: 8px;
-            padding: 8px 10px;
-            margin-bottom: 8px;
-            font-weight: 600;
+            background: #1e293b;
+            color: #f8fafc;
+            border-radius: 12px;
+            padding: 10px 12px;
+            margin-bottom: 10px;
+            font-weight: 700;
             text-align: center;
+            box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
         }
         .question-text {
-            font-size: 1.35rem;
-            line-height: 1.8;
-            font-weight: 600;
-            margin-bottom: 16px;
+            color: #0f172a !important;
+            font-size: 1.45rem;
+            line-height: 1.75;
+            font-weight: 700;
+            margin-bottom: 18px;
+            padding: 18px 20px;
+            background: rgba(219, 234, 254, 0.82);
+            border-radius: 18px;
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            box-shadow: 0 18px 40px rgba(15, 23, 42, 0.10);
+        }
+        .memory-display {
+            color: #0f172a !important;
+            background: rgba(219, 234, 254, 0.82);
+            border: 1px solid rgba(255, 255, 255, 0.14);
+            border-radius: 18px;
+            padding: 18px 22px;
+            box-shadow: 0 18px 40px rgba(15, 23, 42, 0.10);
+            margin-bottom: 18px;
+        }
+        div[data-testid="stRadio"] label,
+        div[data-testid="stRadio"] p {
+            color: #f8fafc !important;
+        }
+        div[data-testid="stRadio"] label {
+            background-color: transparent !important;
+            border: 1px solid rgba(248, 250, 252, 0.18) !important;
+            border-radius: 12px !important;
+            padding: 14px 16px !important;
+            box-shadow: none !important;
+            color: #f8fafc !important;
+        }
+        div[data-testid="stRadio"] label:hover {
+            background-color: transparent !important;
+            border-color: rgba(191, 219, 254, 0.8) !important;
+        }
+        div[data-testid="stRadio"] label input[type="radio"] {
+            accent-color: #bfdbfe !important;
+        }
+        .exam-shell button {
+            background: transparent !important;
+            color: #f8fafc !important;
+            border: 1px solid rgba(248, 250, 252, 0.18) !important;
+            box-shadow: none !important;
+        }
+        .exam-shell button:hover {
+            background: rgba(248, 250, 252, 0.06) !important;
+            border-color: rgba(191, 219, 254, 0.8) !important;
+        }
+        .stTextInput input,
+        .stSelectbox div[data-baseweb="select"] {
+            color: #0f172a !important;
+            background-color: rgba(248, 250, 252, 0.97) !important;
+            border-color: rgba(148, 163, 184, 0.30) !important;
         }
         [class*="st-key-submit_test_main"] button {
             background-color: #2e7d32 !important;
@@ -809,17 +1163,33 @@ def apply_theme():
             border-color: #256628 !important;
             color: #ffffff !important;
         }
-        [class*="st-key-nav_login"] button,
         [class*="st-key-login_submit"] button {
-            background-color: #f8b4b4 !important;
-            border-color: #f8b4b4 !important;
-            color: #7f1d1d !important;
+            background-color: #3b82f6 !important;
+            border-color: #3b82f6 !important;
+            color: #ffffff !important;
+            font-weight: 600 !important;
+            padding: 12px 24px !important;
+            border-radius: 12px !important;
         }
-        [class*="st-key-nav_login"] button:hover,
         [class*="st-key-login_submit"] button:hover {
-            background-color: #f28b8b !important;
-            border-color: #f28b8b !important;
-            color: #7f1d1d !important;
+            background-color: #2563eb !important;
+            border-color: #2563eb !important;
+            color: #ffffff !important;
+            box-shadow: 0 8px 16px rgba(37, 99, 235, 0.2) !important;
+            transform: translateY(-2px) !important;
+        }
+        [class*="st-key-login_back"] button {
+            background-color: rgba(100, 116, 139, 0.2) !important;
+            border-color: rgba(100, 116, 139, 0.4) !important;
+            color: #0f172a !important;
+            font-weight: 600 !important;
+            padding: 12px 24px !important;
+            border-radius: 12px !important;
+        }
+        [class*="st-key-login_back"] button:hover {
+            background-color: rgba(100, 116, 139, 0.3) !important;
+            border-color: rgba(100, 116, 139, 0.5) !important;
+            transform: translateY(-2px) !important;
         }
         div[data-testid="stRadio"] label {
             font-size: 1.05rem !important;
@@ -835,9 +1205,9 @@ def apply_theme():
             gap: 12px !important;
             padding: 10px 14px !important;
             border-radius: 10px !important;
-            background: #f1f5f9 !important;
+            background-color: transparent !important;
             margin: 8px 0 !important;
-            border: 1px solid #e2e8f0 !important;
+            border: 1px solid rgba(248, 250, 252, 0.18) !important;
             min-height: 48px !important;
         }
         div[data-testid="stRadio"] label input[type="radio"] {
@@ -914,15 +1284,9 @@ def get_history(username):
 
 
 def get_marking_rules(mode):
-    if mode == "Practice":
-        return {
-            "mcq_correct": 1.0,
-            "mcq_wrong": 0.0,
-            "memory_max": 1.0,
-        }
     return {
         "mcq_correct": 1.0,
-        "mcq_wrong": -0.25,
+        "mcq_wrong": 0.0,
         "memory_max": 1.0,
     }
 
@@ -1088,7 +1452,7 @@ def submit_test():
             )
 
         # -------- WORD MEMORY --------
-        elif q.get("type") == "word_memory":
+        elif q.get("type") in {"word_memory", "wm_sequence"}:
             user_raw = st.session_state.get(f"user_answer_{i}", "").strip()
             correct_words = [item.lower() for item in st.session_state.get(f"memory_words_{i}", [])]
             user_words = token_list(user_raw)
@@ -1121,7 +1485,7 @@ def submit_test():
             )
 
         # -------- NUMBER MEMORY --------
-        elif q.get("type") == "number_memory":
+        elif q.get("type") in {"number_memory", "wm_numbers"}:
             user_raw = st.session_state.get(f"user_answer_{i}", "").strip()
             correct_text = "".join(map(str, st.session_state.get(f"numbers_{i}", [])))
 
@@ -1156,7 +1520,7 @@ def submit_test():
 
 
         # -------- IMAGE MEMORY --------
-        elif q.get("type") == "image_memory":
+        elif q.get("type") in {"image_memory", "wm_image"}:
             user_raw = st.session_state.get(f"user_answer_{i}", "").strip()
             correct_images = [item.lower() for item in st.session_state.get(f"shown_images_{i}", [])]
             user_images = token_list(user_raw)
@@ -1190,7 +1554,7 @@ def submit_test():
 
 
         # -------- GRID MEMORY --------
-        elif q.get("type") == "grid_memory":
+        elif q.get("type") in {"grid_memory", "wm_pattern"}:
             user = st.session_state.get(f"user_answer_{i}", [])
             correct_cells = set(st.session_state.get(f"grid_pattern_{i}", []))
             if len(user) > 0:
@@ -1339,20 +1703,27 @@ def render_palette_styles(total_questions):
 
 
 def render_header():
-    st.markdown('<div class="app-header"><h3 style="margin:0;">Cognitive Assessment System</h3></div>', unsafe_allow_html=True)
-    col1, col2, col3, col4, col5, col6 = st.columns([1, 1, 1, 1, 2, 1])
+    col1, col2, col3, col4, col5, col6 = st.columns([2, 1, 1, 1, 1, 1], gap="medium")
 
-    if col1.button("Home", use_container_width=True):
+    col1.markdown(
+        '<div class="app-brand"><div class="app-logo">🧠</div><div><div style="font-size:1.15rem;font-weight:700;line-height:1.1;">Cognitive Assessment System</div><div style="font-size:0.85rem;color:rgba(248,248,255,0.80);margin-top:4px;">Smart test interface</div></div></div>',
+        unsafe_allow_html=True,
+    )
+
+    if col2.button("Home", use_container_width=True):
         st.session_state.current_page = "home"
-    if col2.button("Signup", use_container_width=True):
+    if col3.button("Signup", use_container_width=True):
         st.session_state.current_page = "signup"
-    if col3.button("Login", use_container_width=True, key="nav_login"):
+    if col4.button("Login", use_container_width=True, key="nav_login"):
         st.session_state.current_page = "login"
-    if col4.button("Resources", use_container_width=True):
+    if col5.button("Resources", use_container_width=True):
         st.session_state.current_page = "resources"
 
     if st.session_state.logged_in:
-        col5.markdown(f"<div style='text-align:right;padding-top:8px;'>Logged in: <b>{st.session_state.username}</b></div>", unsafe_allow_html=True)
+        col6.markdown(
+            f"<div style='text-align:right;padding-top:8px;color:#f8fafc;'>Logged in: <strong>{st.session_state.username}</strong></div>",
+            unsafe_allow_html=True,
+        )
         if col6.button("Logout", use_container_width=True):
             reset_test_state()
             st.session_state.logged_in = False
@@ -1758,7 +2129,6 @@ def render_home_page():
 
     if action_col1.button("Generate Test", type="primary", use_container_width=True):
         start_test(st.session_state.home_test_mode)
-        st.session_state.current_page = "login"
         st.rerun()
 
     if action_col2.button("History", use_container_width=True):
@@ -1851,7 +2221,7 @@ def render_exam_page(username):
     sync_tab_switch_violations_from_query()
     rules = get_marking_rules(st.session_state.test_mode)
     if st.session_state.test_mode == "Exam":
-        st.caption("Exam Mode: strict monitoring, negative marking, and auto-submit at 00:00.")
+        st.caption("Exam Mode: strict monitoring and auto-submit at 00:00.")
     else:
         st.caption("Practice Mode: no negative marking and proctoring disabled.")
 
@@ -1944,6 +2314,10 @@ def render_exam_page(username):
 
     left_col, right_col = st.columns([5, 1])
 
+    if total_questions == 0:
+        st.error("No questions generated. Please return to the dashboard and try again.")
+        return
+
     current_idx = st.session_state.current_question_idx
     if current_idx >= total_questions:
         current_idx = total_questions - 1
@@ -1967,7 +2341,10 @@ def render_exam_page(username):
         if image_path is not None:
             st.image(str(image_path), use_container_width=True)
 
-        if "options" in question:
+        if question.get("type") in {"recall_letter_sequence", "recall_number_sequence", "recall_sequence_order", "recall_add_and_reverse"}:
+            render_recall_memory_question(current_idx, question)
+
+        elif "options" in question:
             option_items = _build_option_items(question["options"])
             option_labels = [item["label"] for item in option_items]
             current_answer = st.session_state.answers.get(current_idx)
@@ -2035,28 +2412,28 @@ def render_exam_page(username):
             )
             st.session_state.answers[current_idx] = answer if answer.strip() else None
 
-        elif question.get("type") == "number_memory":
-            st.markdown("<div class='question-text'>Number Memory</div>", unsafe_allow_html=True)
+        elif question.get("type") in {"number_memory", "wm_numbers"}:
+            st.markdown(f"<div class='question-text'>{question.get('question', 'Number Memory')}</div>", unsafe_allow_html=True)
             number_memory_test(current_idx)
             st.session_state.answers[current_idx] = st.session_state.get(f"user_answer_{current_idx}", None)
 
-        elif question.get("type") == "word_memory":
-            st.markdown("<div class='question-text'>Word Memory</div>", unsafe_allow_html=True)
+        elif question.get("type") in {"word_memory", "wm_sequence"}:
+            st.markdown(f"<div class='question-text'>{question.get('question', 'Word Memory')}</div>", unsafe_allow_html=True)
             word_memory_test(current_idx)
             st.session_state.answers[current_idx] = st.session_state.get(f"user_answer_{current_idx}", None)
 
-        elif question.get("type") == "image_memory":
-            st.markdown("<div class='question-text'>Image Memory</div>", unsafe_allow_html=True)
+        elif question.get("type") in {"image_memory", "wm_image"}:
+            st.markdown(f"<div class='question-text'>{question.get('question', 'Image Memory')}</div>", unsafe_allow_html=True)
             image_memory_test(current_idx)
             st.session_state.answers[current_idx] = st.session_state.get(f"user_answer_{current_idx}", None)
 
-        elif question.get("type") == "nback":
-            st.markdown("<div class='question-text'>Image Sequence Memory</div>", unsafe_allow_html=True)
+        elif question.get("type") in {"nback", "wm_pattern"}:
+            st.markdown(f"<div class='question-text'>{question.get('question', 'Image Sequence Memory')}</div>", unsafe_allow_html=True)
             nback_memory_test(current_idx)
             st.session_state.answers[current_idx] = st.session_state.get(f"user_answer_{current_idx}", None)
 
         elif question.get("type") == "grid_memory":
-            st.markdown("<div class='question-text'>Grid Memory</div>", unsafe_allow_html=True)
+            st.markdown(f"<div class='question-text'>{question.get('question', 'Grid Memory')}</div>", unsafe_allow_html=True)
             grid_memory_test(current_idx)
             st.session_state.answers[current_idx] = st.session_state.get(f"user_answer_{current_idx}", None)
 
@@ -2066,7 +2443,7 @@ def render_exam_page(username):
         memory_display_active = any(
             st.session_state.get(f"{flag}_{current_idx}", False)
             for flag in ["show_numbers", "show_words", "show_images", "show_grid", "show_nback"]
-        )
+        ) or st.session_state.get(f"recall_{current_idx}", False)
 
         if not memory_display_active:
             st.text_input(
@@ -2119,19 +2496,58 @@ def render_exam_page(username):
 
 def render_login_page():
     if not st.session_state.logged_in:
-        st.subheader("Login")
-        username = st.text_input("Username", key="login_username")
-        password = st.text_input("Password", type="password", key="login_password")
-
-        if st.button("Login", type="primary", key="login_submit"):
-            user = login_user(username, password)
-            if user:
-                st.session_state.logged_in = True
-                st.session_state.username = username
-                st.success("Login successful")
-                st.rerun()
-            else:
-                st.error("Invalid login")
+        st.markdown(
+            """
+            <style>
+            [data-testid="column"] {
+                padding: 0 !important;
+            }
+            </style>
+            """,
+            unsafe_allow_html=True,
+        )
+        
+        _, center_col, _ = st.columns([1, 1.2, 1], gap="small")
+        
+        with center_col:
+            st.markdown(
+                """
+                <div class='page-card'>
+                    <div class='page-card-title'>Welcome Back</div>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
+            
+            username = st.text_input(
+                "Username",
+                key="login_username",
+                placeholder="Enter your username",
+            )
+            password = st.text_input(
+                "Password",
+                type="password",
+                key="login_password",
+                placeholder="Enter your password",
+            )
+            
+            col1, col2 = st.columns([1, 1])
+            with col1:
+                if st.button("Login", type="primary", key="login_submit", use_container_width=True):
+                    user = login_user(username, password)
+                    if user:
+                        st.session_state.logged_in = True
+                        st.session_state.username = username
+                        st.success("Login successful")
+                        st.rerun()
+                    else:
+                        st.error("Invalid login")
+            
+            with col2:
+                if st.button("Back to Home", key="login_back", use_container_width=True):
+                    st.session_state.current_page = "home"
+                    st.rerun()
+        
         return
 
     username = st.session_state.username

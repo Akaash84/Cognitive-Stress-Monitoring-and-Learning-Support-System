@@ -992,34 +992,59 @@ def pick_random(pool, count=10):
 
 def get_working_memory_questions(level):
 
+    if level == "medium":
+        return [
+            {
+                "id": "WM-M1",
+                "type": "recall_letter_sequence",
+                "memory_display": "K, D, L, C, B, A",
+                "question": "What letter appeared two positions before B?",
+                "options": ["D", "L", "C", "K"],
+                "answer": "L"
+            },
+            {
+                "id": "WM-M2",
+                "type": "recall_number_sequence",
+                "memory_display": "3, 8, 2, 9, 5",
+                "question": "Recall the numbers in reverse order.",
+                "options": ["5, 9, 2, 8, 3", "3, 8, 2, 9, 5", "5, 2, 9, 8, 3", "9, 5, 2, 8, 3"],
+                "answer": "5, 9, 2, 8, 3"
+            },
+            {
+                "id": "WM-M3",
+                "type": "recall_sequence_order",
+                "memory_display": "F, J, K, L, S, R, Q",
+                "question": "What are the last three letters in order?",
+                "options": ["Q, R, S", "L, Q, R", "K, L, Q", "R, S, Q"],
+                "answer": "Q, R, S"
+            },
+            {
+                "id": "WM-M4",
+                "type": "recall_add_and_reverse",
+                "memory_display": "4, 9, 15",
+                "question": "Add 5 to each and report in reverse order.",
+                "options": ["20, 14, 9", "9, 14, 20", "19, 14, 9", "20, 13, 9"],
+                "answer": "20, 14, 9"
+            },
+            {
+                "id": "WM-M5",
+                "type": "grid_memory",
+                "question": "Random 3 cells will be highlighted for 5 seconds. After that select the highlighted cells."
+            }
+        ]
 
-        if level == "medium":
-            return [
-                {
-                    "id": "WM-M1",
-                    "type": "wm_numbers",
-                    "question": "Memorize the numbers carefully"
-                },
-                {
-                    "id": "WM-M2",
-                    "type": "wm_sequence",
-                    "question": "Memorize the words carefully"
-                }
-            ]
-
-        else:
-            return [
-                {
-                    "id": "WM-H1",
-                    "type": "wm_image",
-                    "question": "Observe the image carefully and recall objects"
-                },
-                {
-                    "id": "WM-H2",
-                    "type": "wm_pattern",
-                    "question": "Identify the change between Pattern A and Pattern B"
-                }
-            ]
+    return [
+        {
+            "id": "WM-H1",
+            "type": "wm_image",
+            "question": "Observe the image carefully and recall objects"
+        },
+        {
+            "id": "WM-H2",
+            "type": "wm_pattern",
+            "question": "Identify the change between Pattern A and Pattern B"
+        }
+    ]
 
 # ---------------- GENERATE TEST ----------------
 

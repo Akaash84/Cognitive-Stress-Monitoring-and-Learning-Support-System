@@ -26,7 +26,7 @@
       "id": "NA-3",
       "type": "NUMERICAL ABILITY",
       "question": "Which stock increased its value the most from January to February?",
-      "image": "images/NA-3.png",
+      "image": "images/NA-5.png",
       "options": {
         "A": "A",
         "B": "B",
@@ -39,7 +39,7 @@
       "id": "NA-5",
       "type": "NUMERICAL ABILITY",
       "question": "What percentage of females were treated with medicine A?",
-      "image": "images/NA-5.png",
+      "image": "images/NA-3.png",
       "options": {
         "A": "40%",
         "B": "120%",
@@ -137,7 +137,7 @@
       {
         "id": 23,
         "type": "NUMERICAL ABILITY",
-        "question": "The sum of the sequence is ∑_{k=1}^{4} (1 + k!)",
+        "question": "For k in [1,4], the summation of (1 + k!) is",
         "options": ["37", "38", "39", "40"],
         "answer": "37"
       }
