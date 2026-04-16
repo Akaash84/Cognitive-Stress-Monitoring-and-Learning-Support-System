@@ -9,12 +9,14 @@ import re
 import random
 import pandas as pd
 import altair as alt
+from typing import Optional
 from login import create_user, login_user
 from predict import predict_with_recommendations
 import math
 from question_generator import (
     generate_test,
-    run 
+    render_memory,
+    run,
 )
 
 # Optional hardware integration (Arduino/MAX30105) via serial.
@@ -45,27 +47,47 @@ def _resolve_question_image_path(image_ref):
 
     raw_name = Path(str(image_ref)).name
     stem = Path(raw_name).stem
-    suffix = Path(raw_name).suffix or ".png"
+    suffix = Path(raw_name).suffix
+    image_extensions = [".png", ".jpg", ".jpeg", ".webp", ".gif"]
 
     candidates = {raw_name}
+    if not suffix:
+        candidates.update({f"{stem}{ext}" for ext in image_extensions})
+    else:
+        candidates.add(raw_name)
 
     compact_stem = stem.replace("-", "")
     match_with_option = re.match(r"^([A-Za-z]+)(\d+)([A-Za-z])$", compact_stem)
     if match_with_option:
         prefix, number, option = match_with_option.groups()
-        candidates.update(
-            {
-                f"{prefix}{number}{option}{suffix}",
-                f"{prefix}{number}-{option}{suffix}",
-                f"{prefix}-{number}{option}{suffix}",
-                f"{prefix}-{number}-{option}{suffix}",
-            }
-        )
+        if suffix:
+            candidates.update(
+                {
+                    f"{prefix}{number}{option}{suffix}",
+                    f"{prefix}{number}-{option}{suffix}",
+                    f"{prefix}-{number}{option}{suffix}",
+                    f"{prefix}-{number}-{option}{suffix}",
+                }
+            )
+        else:
+            for ext in image_extensions:
+                candidates.update(
+                    {
+                        f"{prefix}{number}{option}{ext}",
+                        f"{prefix}{number}-{option}{ext}",
+                        f"{prefix}-{number}{option}{ext}",
+                        f"{prefix}-{number}-{option}{ext}",
+                    }
+                )
 
     match_plain = re.match(r"^([A-Za-z]+)(\d+)$", compact_stem)
     if match_plain:
         prefix, number = match_plain.groups()
-        candidates.update({f"{prefix}{number}{suffix}", f"{prefix}-{number}{suffix}"})
+        if suffix:
+            candidates.update({f"{prefix}{number}{suffix}", f"{prefix}-{number}{suffix}"})
+        else:
+            for ext in image_extensions:
+                candidates.update({f"{prefix}{number}{ext}", f"{prefix}-{number}{ext}"})
 
     existing_by_lower = {}
     for path in IMAGES_DIR.iterdir():
@@ -78,6 +100,17 @@ def _resolve_question_image_path(image_ref):
             return matched
 
     return None
+
+
+def _looks_like_image_reference(value: str) -> bool:
+    candidate = str(value).strip()
+    if not candidate:
+        return False
+    return bool(
+        re.search(r"\.(png|jpe?g|webp|gif)$", candidate, re.IGNORECASE)
+        or "/" in candidate
+        or "\\" in candidate
+    )
 
 
 def _list_serial_ports() -> list[str]:
@@ -315,9 +348,15 @@ def image_memory_test(question_idx):
 
     if st.session_state.get(f"show_images_{question_idx}", False):
         st.markdown("<div style='margin:12px 0;'>Memorize these images:</div>", unsafe_allow_html=True)
-        image_html = "".join([f"<span class='num-badge'>{img}</span>" for img in st.session_state[f"shown_images_{question_idx}"]])
-        st.markdown(f"<div style='display:flex;gap:8px;flex-wrap:wrap;'>{image_html}</div>", unsafe_allow_html=True)
-        seconds = len(st.session_state.get(f"shown_images_{question_idx}", [])) + 2
+        shown = st.session_state[f"shown_images_{question_idx}"]
+        cols = st.columns(len(shown))
+        for idx, img in enumerate(shown):
+            image_path = _resolve_question_image_path(img)
+            if image_path is not None:
+                cols[idx].image(str(image_path), width=140)
+            else:
+                cols[idx].markdown(f"<div class='num-badge'>{img}</div>", unsafe_allow_html=True)
+        seconds = len(shown) + 2
         if run_memory_display_countdown(f"show_images_{question_idx}", seconds):
             return
         st.session_state[f"show_images_{question_idx}"] = False
@@ -338,9 +377,15 @@ def nback_memory_test(question_idx):
 
     if st.session_state.get(f"show_nback_{question_idx}", False):
         st.markdown("<div style='margin:12px 0;'>Memorize these images in order:</div>", unsafe_allow_html=True)
-        image_html = "".join([f"<span class='num-badge'>{img}</span>" for img in st.session_state[f"nback_images_{question_idx}"]])
-        st.markdown(f"<div style='display:flex;gap:8px;flex-wrap:wrap;'>{image_html}</div>", unsafe_allow_html=True)
-        seconds = len(st.session_state.get(f"nback_images_{question_idx}", [])) + 2
+        shown = st.session_state[f"nback_images_{question_idx}"]
+        cols = st.columns(len(shown))
+        for idx, img in enumerate(shown):
+            image_path = _resolve_question_image_path(img)
+            if image_path is not None:
+                cols[idx].image(str(image_path), width=140)
+            else:
+                cols[idx].markdown(f"<div class='num-badge'>{img}</div>", unsafe_allow_html=True)
+        seconds = len(shown) + 2
         if run_memory_display_countdown(f"show_nback_{question_idx}", seconds):
             return
         st.session_state[f"show_nback_{question_idx}"] = False
@@ -395,22 +440,32 @@ def _is_mcq_answer_correct(question, user_answer, correct_answer):
     if user_answer is None or correct_answer is None:
         return False
 
-    if _normalize_answer_token(user_answer) == _normalize_answer_token(correct_answer):
+    user_token = _normalize_answer_token(user_answer)
+    correct_token = _normalize_answer_token(correct_answer)
+    if user_token == correct_token:
         return True
 
     options = question.get("options")
     if isinstance(options, dict):
-        for key, value in options.items():
-            if (
-                _normalize_answer_token(correct_answer) == _normalize_answer_token(key)
-                and _normalize_answer_token(user_answer) == _normalize_answer_token(value)
-            ):
-                return True
-            if (
-                _normalize_answer_token(user_answer) == _normalize_answer_token(key)
-                and _normalize_answer_token(correct_answer) == _normalize_answer_token(value)
-            ):
-                return True
+        iterable = list(options.items())
+    elif isinstance(options, list):
+        iterable = [(chr(65 + idx), value) for idx, value in enumerate(options)]
+    else:
+        iterable = []
+
+    for key, value in iterable:
+        key_token = _normalize_answer_token(key)
+        value_token = _normalize_answer_token(value)
+
+        # Accept either the option key/letter or the option value for comparisons.
+        if (user_token == key_token and correct_token == key_token) or (
+            user_token == value_token and correct_token == value_token
+        ):
+            return True
+        if (user_token == key_token and correct_token == value_token) or (
+            user_token == value_token and correct_token == key_token
+        ):
+            return True
 
     return False
 
@@ -425,12 +480,16 @@ def _build_option_items(options):
         iterable = []
 
     for key, value in iterable:
-        image_path = _resolve_question_image_path(value) if isinstance(value, str) else None
-        # Show only the option value (no 'A) ' prefix). For image options, use a neutral label.
+        image_path = (
+            _resolve_question_image_path(value)
+            if isinstance(value, str) and _looks_like_image_reference(value)
+            else None
+        )
+        # Show the option letter and value, so the choice matches the question clearly.
         if image_path is not None:
-            label = "Image option"
+            label = f"{key}: Image option"
         else:
-            label = f"{value}"
+            label = f"{key}: {value}"
 
         option_items.append(
             {
@@ -838,6 +897,8 @@ def init_state():
         st.session_state.current_question_idx = 0
     if "visited_questions" not in st.session_state:
         st.session_state.visited_questions = []
+    if "last_question_idx" not in st.session_state:
+        st.session_state.last_question_idx = None
     if "submit_confirmation_text" not in st.session_state:
         st.session_state.submit_confirmation_text = ""
     if "show_submit_confirm" not in st.session_state:
@@ -860,6 +921,8 @@ def init_state():
         st.session_state.tab_switch_violations = 0
     if "current_test_type" not in st.session_state:
         st.session_state.current_test_type = "foundation"
+    if "selected_test_level" not in st.session_state:
+        st.session_state.selected_test_level = "foundation"
     if "advanced_unlocked" not in st.session_state:
         st.session_state.advanced_unlocked = False
     if "_just_unlocked_advanced" not in st.session_state:
@@ -1787,7 +1850,7 @@ def submit_test():
     review_rows = []
     domain_scores = {"logical": 0.0, "mathematical": 0.0, "verbal": 0.0, "applied": 0.0, "memory": 0.0}
 
-    def infer_domain(question: dict) -> str | None:
+    def infer_domain(question: dict) -> Optional[str]:
         qtype = str(question.get("type", "")).strip().lower()
         if qtype in {
             "word_memory",
@@ -1920,6 +1983,39 @@ def submit_test():
             if domain is not None:
                 domain_scores[domain] += float(marks)
 
+        # -------- WORKING MEMORY PATTERN --------
+        elif q.get("type") == "wm_pattern":
+            user_answer = st.session_state.answers.get(i)
+            correct_answer = q.get("answer")
+
+            if user_answer is not None and str(user_answer).strip():
+                attempted_questions += 1
+                if correct_answer is None:
+                    marks = 0.0
+                    result = "Attempted (No key)"
+                elif _normalize_answer_token(user_answer) == _normalize_answer_token(correct_answer):
+                    marks = rules["memory_max"]
+                    result = "Correct"
+                else:
+                    marks = 0.0
+                    result = "Wrong"
+
+            score += marks
+            if marks > 0:
+                positive_marks += marks
+
+            add_review_row(
+                i,
+                "Pattern Memory",
+                q.get("question", "Pattern Memory"),
+                str(user_answer) if user_answer is not None else "Not Attempted",
+                str(correct_answer) if correct_answer is not None else "Not Provided",
+                marks,
+                result,
+                q.get("explanation", ""),
+            )
+            domain_scores["memory"] += float(marks)
+
         # -------- WORD MEMORY --------
         elif q.get("type") in {"word_memory", "wm_sequence"}:
             user_raw = st.session_state.get(f"user_answer_{i}", "").strip()
@@ -2029,7 +2125,7 @@ def submit_test():
 
 
         # -------- GRID MEMORY --------
-        elif q.get("type") in {"grid_memory", "wm_pattern"}:
+        elif q.get("type") == "grid_memory":
             user = st.session_state.get(f"user_answer_{i}", [])
             correct_cells = set(st.session_state.get(f"grid_pattern_{i}", []))
             if len(user) > 0:
@@ -2244,7 +2340,7 @@ def render_header():
         with col6:
             username = str(st.session_state.username or "")
             initial = (username[:1].upper() if username else "A")
-            with st.popover(f"{initial}", use_container_width=False, key="account_menu"):
+            with st.popover(f"{initial}", use_container_width=False):
                 st.markdown(
                     f"<div style='font-weight:750;color:rgba(241,245,249,0.95);margin-bottom:6px;'>Account</div>"
                     f"<div style='color:rgba(203,213,225,0.92);margin-bottom:12px;'>Signed in as <strong>{username}</strong></div>",
@@ -2846,7 +2942,7 @@ def render_exam_page(username):
     def is_answered(idx, q):
         if "options" in q:
             return st.session_state.answers.get(idx) is not None
-        if q.get("type") in {"word_memory", "number_memory", "image_memory", "nback"}:
+        if q.get("type") in {"word_memory", "number_memory", "image_memory", "nback", "wm_image", "wm_pattern"}:
             return st.session_state.get(f"user_answer_{idx}", "") != ""
         if q.get("type") == "grid_memory":
             return len(st.session_state.get(f"user_answer_{idx}", [])) > 0
@@ -3037,6 +3133,8 @@ def render_exam_page(username):
     if current_idx not in st.session_state.visited_questions:
         st.session_state.visited_questions.append(current_idx)
 
+    st.session_state.last_question_idx = current_idx
+
     render_palette_styles(total_questions)
 
     with left_col:
@@ -3066,6 +3164,18 @@ def render_exam_page(username):
 
         if question.get("type") in {"recall_letter_sequence", "recall_number_sequence", "recall_sequence_order", "recall_add_and_reverse"}:
             render_recall_memory_question(current_idx, question)
+
+        elif question.get("type") in {"wm_image", "wm_pattern"}:
+            if question.get("type") == "wm_pattern":
+                seen_key = f"{question['id']}_seen"
+                if st.session_state.last_question_idx != current_idx:
+                    if not st.session_state.get(f"user_answer_{current_idx}"):
+                        st.session_state.pop(seen_key, None)
+                        st.session_state.pop(f"{question['id']}_timer_start", None)
+
+            st.markdown(f"<div class='question-text'>{question.get('question', 'Image Memory')}</div>", unsafe_allow_html=True)
+            render_memory(question, answer_key=f"user_answer_{current_idx}")
+            st.session_state.answers[current_idx] = st.session_state.get(f"user_answer_{current_idx}", None)
 
         elif "options" in question:
             option_items = _build_option_items(question["options"])
@@ -3145,12 +3255,12 @@ def render_exam_page(username):
             word_memory_test(current_idx)
             st.session_state.answers[current_idx] = st.session_state.get(f"user_answer_{current_idx}", None)
 
-        elif question.get("type") in {"image_memory", "wm_image"}:
+        elif question.get("type") in {"image_memory"}:
             st.markdown(f"<div class='question-text'>{question.get('question', 'Image Memory')}</div>", unsafe_allow_html=True)
             image_memory_test(current_idx)
             st.session_state.answers[current_idx] = st.session_state.get(f"user_answer_{current_idx}", None)
 
-        elif question.get("type") in {"nback", "wm_pattern"}:
+        elif question.get("type") == "nback":
             st.markdown(f"<div class='question-text'>{question.get('question', 'Image Sequence Memory')}</div>", unsafe_allow_html=True)
             nback_memory_test(current_idx)
             st.session_state.answers[current_idx] = st.session_state.get(f"user_answer_{current_idx}", None)
@@ -3167,6 +3277,8 @@ def render_exam_page(username):
             st.session_state.get(f"{flag}_{current_idx}", False)
             for flag in ["show_numbers", "show_words", "show_images", "show_grid", "show_nback"]
         ) or st.session_state.get(f"recall_{current_idx}", False)
+        if question.get("type") in {"wm_image", "wm_pattern"}:
+            memory_display_active = memory_display_active or st.session_state.get(f"{question['id']}_timer_start", False)
 
         is_last_question = current_idx == (total_questions - 1)
         nav_disabled = memory_display_active
@@ -3413,19 +3525,31 @@ def render_login_page():
         horizontal=True,
     )
 
-    btn_col1, btn_col2 = st.columns([1, 1])
-    if btn_col1.button("Take Test", type="primary", use_container_width=False, key="take_test_dashboard"):
-        start_test(st.session_state.login_test_mode, "foundation")
+    available_test_levels = ["foundation", "advanced"]
+
+    selected_index = 0
+    if st.session_state.selected_test_level in available_test_levels:
+        selected_index = available_test_levels.index(st.session_state.selected_test_level)
+
+    st.selectbox(
+        "Choose attempt:",
+        available_test_levels,
+        index=selected_index,
+        format_func=lambda x: "Foundation" if x == "foundation" else "Advanced",
+        key="selected_test_level",
+    )
+
+    advanced_selected = st.session_state.selected_test_level == "advanced"
+
+    c1, c2 = st.columns([1, 1])
+    if c1.button("Start Test", type="primary", use_container_width=False, key="take_test_dashboard"):
+        start_test(st.session_state.login_test_mode, st.session_state.selected_test_level)
         st.rerun()
-    if st.session_state.get("advanced_unlocked", False):
-        if btn_col2.button("Take Advanced Test", use_container_width=False, key="take_advanced_dashboard"):
-            start_test(st.session_state.login_test_mode, "advanced")
-            st.rerun()
-    else:
-        btn_col2.markdown(
-            "<div style='margin-top:8px;color:rgba(203,213,225,0.88);font-size:0.9rem;'>Advanced test unlocks after passing Foundation.</div>",
-            unsafe_allow_html=True,
-        )
+
+    c2.markdown(
+        "<div style='margin-top:8px;color:rgba(203,213,225,0.88);font-size:0.95rem;'>Select either Foundation or Advanced and press Start Test. Both levels are available.</div>",
+        unsafe_allow_html=True,
+    )
 
     # History is available from the Account menu.
 

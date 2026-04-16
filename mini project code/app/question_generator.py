@@ -953,6 +953,7 @@
 
 
 import json
+import re
 import streamlit as st
 import random
 import time
@@ -960,9 +961,10 @@ from pathlib import Path
 
 # ---------------- PATH SETUP ----------------
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
-DATA_PATH = PROJECT_ROOT / "data"
+BASE_DIR = Path(__file__).resolve().parent
+DATA_PATH = BASE_DIR.parent / "data"
 IMAGE_PATH = DATA_PATH / "images"
+MEMORY_PATH = BASE_DIR / "memory"
 
 QUESTIONS_PATH = DATA_PATH / "questions.json"
 
@@ -972,9 +974,24 @@ with QUESTIONS_PATH.open(encoding="utf-8-sig") as f:
 # ---------------- SAFE DOMAIN FETCH ----------------
 
 def get_domain(keys):
+    normalized_questions = {
+        str(k).strip().lower(): questions[k]
+        for k in questions
+    }
+
     for k in keys:
-        if k in questions:
-            return questions[k]
+        normalized_key = str(k).strip().lower()
+        if normalized_key in normalized_questions:
+            return normalized_questions[normalized_key]
+
+    # fallback: allow partial token matches for alternative naming
+    for k in keys:
+        normalized_key = str(k).strip().lower()
+        key_tokens = [token for token in re.split(r"\W+", normalized_key) if token]
+        for question_key, value in normalized_questions.items():
+            if all(token in question_key for token in key_tokens):
+                return value
+
     return {}
 
 # ---------------- RANDOM PICK ----------------
@@ -1042,7 +1059,14 @@ def get_working_memory_questions(level):
         {
             "id": "WM-H2",
             "type": "wm_pattern",
-            "question": "Identify the change between Pattern A and Pattern B"
+            "question": "Identify the change between Pattern A and Pattern B",
+            "options": [
+                "A shape has changed its color",
+                "A shape has changed its position",
+                "A shape has changed its shape type",
+                "No change has occurred"
+            ],
+            "answer": "A shape has changed its color"
         }
     ]
 
@@ -1053,27 +1077,40 @@ def generate_test(test_type="foundation"):
 
     level = "medium" if test_type == "foundation" else "hard"
 
+    def _domain_pool(keys):
+        pool_data = get_domain(keys)
+        return pool_data.get(level) or pool_data.get("medium") or []
+
     domains = {
-        "NUMERICAL": get_domain(["NUMERICAL ABILITY"]).get(level, []),
-
-    "LOGICAL": get_domain([
-        "LOGICAL REASONING",
-        "Logical reasoning",
-        "logical_reasoning"
-    ]).get(level, []),
-
-    "VERBAL": get_domain([
-        "VERBAL REASONING",
-        "Verbal reasoning",
-        "verbal_reasoning"
-    ]).get(level, []),
-
-    "APPLIED": get_domain([
-        "APPLIED REASONING",
-        "Applied reasoning",
-        "applied_reasoning"
-    ]).get(level, []),
+        "NUMERICAL": _domain_pool(["NUMERICAL ABILITY"]),
+        "LOGICAL": _domain_pool([
+            "LOGICAL REASONING",
+            "Logical reasoning",
+            "logical_reasoning"
+        ]),
+        "VERBAL": _domain_pool([
+            "VERBAL REASONING",
+            "Verbal reasoning",
+            "verbal_reasoning"
+        ]),
+        "APPLIED": _domain_pool([
+            "APPLIED REASONING",
+            "Applied reasoning",
+            "applied_reasoning"
+        ]),
     }
+
+    if not any(domains.values()):
+        all_available = []
+        for value in questions.values():
+            if isinstance(value, dict):
+                for section in value.values():
+                    if isinstance(section, list):
+                        all_available.extend(section)
+        test.extend([q for q in all_available if isinstance(q, dict)])
+        test.extend(get_working_memory_questions(level))
+        random.shuffle(test)
+        return test
 
     for name, pool in domains.items():
 
@@ -1111,41 +1148,54 @@ def countdown(key, sec=10):
 
 # ---------------- MEMORY RENDER ----------------
 
-def render_memory(q):
+def render_memory(q, answer_key=None):
+    answer_key = answer_key or q["id"]
 
     # 🔴 WM-H1 → IMAGE RECALL
     if q["type"] == "wm_image":
 
-        img_path ="memory/WM-1.png"
+        img_path = MEMORY_PATH / "WM-1.png"
+        done_key = f"{q['id']}_done"
+        timer_key = f"{q['id']}_timer"
 
-        if "wm1_done" not in st.session_state:
+        if done_key not in st.session_state:
             st.write("Memorize this image")
             st.image(str(img_path), width=500)
 
-            if countdown("wm1", 10):
+            if countdown(timer_key, 10):
                 return
 
-            st.session_state["wm1_done"] = True
+            st.session_state[done_key] = True
             st.rerun()
 
         else:
-            st.text_input("List objects you remember", key=q["id"])
+            st.text_input("List objects you remember", key=answer_key)
 
     # 🔴 WM-H2 → PATTERN MEMORY
     elif q["type"] == "wm_pattern":
 
-        img_A ="memory/WM-2A.png"
-        img_B = "memory/WM-2B.png"
+        img_A = MEMORY_PATH / "WM-2A.png"
+        img_B = MEMORY_PATH / "WM-2B.png"
+        seen_key = f"{q['id']}_seen"
+        timer_key = f"{q['id']}_timer"
 
-        if "pattern_seen" not in st.session_state:
+        missing_images = [str(path.name) for path in (img_A, img_B) if not path.exists()]
+        if missing_images:
+            st.error(
+                "Missing WM pattern image file(s): " + ", ".join(missing_images) + ". "
+                "Please ensure these files exist in the app/memory folder."
+            )
+            return
+
+        if seen_key not in st.session_state:
 
             st.write("Memorize Pattern A")
             st.image(str(img_A), width=300)
 
-            if countdown("pattern", 10):
+            if countdown(timer_key, 10):
                 return
 
-            st.session_state["pattern_seen"] = True
+            st.session_state[seen_key] = True
             st.rerun()
 
         else:
@@ -1153,16 +1203,31 @@ def render_memory(q):
 
             st.image(str(img_B), width=300)
 
-            st.radio(
+            options = q.get("options", [
+                "A shape has changed its color",
+                "A shape has changed its position",
+                "A shape has changed its shape type",
+                "No change has occurred"
+            ])
+
+            current_answer = st.session_state.get(answer_key, "")
+            placeholder = "Select one option"
+            choices = [placeholder] + options
+            default_index = 0
+            if current_answer in options:
+                default_index = options.index(current_answer) + 1
+
+            selection = st.radio(
                 "What changed?",
-                [
-                    "A shape has changed its color",
-                    "A shape has changed its position",
-                    "A shape has changed its shape type",
-                    "No change has occurred"
-                ],
-                key=q["id"]
+                choices,
+                index=default_index,
+                key=f"{answer_key}_radio",
             )
+
+            if selection == placeholder:
+                st.session_state[answer_key] = ""
+            else:
+                st.session_state[answer_key] = selection
 
     # MEDIUM MEMORY
 
@@ -1176,7 +1241,6 @@ def render_memory(q):
         st.radio("Answer", ["D", "L", "C", "K"], key=q["id"])
 
 # ---------------- SCORING ----------------
-
 def calculate_score(test):
 
     score = 0
@@ -1219,8 +1283,12 @@ def run():
         st.write("###", q.get("question", ""))
 
         if q.get("image"):
-            st.image(q["image"])
+            img_path = BASE_DIR / q["image"]
 
+            if img_path.exists():
+                st.image(str(img_path))
+            else:
+                st.error(f"Image not found: {img_path}")
         if q.get("type", "").startswith("wm"):
             render_memory(q)
 

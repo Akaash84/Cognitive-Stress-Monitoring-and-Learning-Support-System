@@ -1,5 +1,5 @@
 import os
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 import joblib
 
@@ -69,9 +69,9 @@ def predict_with_recommendations(
     mathematical: float,
     verbal: float,
     memory: float,
-    heart_rate_bpm: float | None = None,
-    stress_level: float | None = None,
-    hrv_ms: float | None = None,
+    heart_rate_bpm: Optional[float] = None,
+    stress_level: Optional[float] = None,
+    hrv_ms: Optional[float] = None,
 ) -> Tuple[str, List[str]]:
     """
     Predict a performance label and return recommendations.
@@ -81,7 +81,7 @@ def predict_with_recommendations(
     - If you haven't added hardware columns to dataset.csv + retrained, they won't affect predictions yet,
       but we still use them in the recommendation layer.
     """
-    raw: Dict[str, float | None] = {
+    raw: Dict[str, Optional[float]] = {
         "logical": logical,
         "mathematical": mathematical,
         "verbal": verbal,

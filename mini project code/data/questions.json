@@ -147,7 +147,7 @@
         "id": "NA-5",
         "type": "NUMERICAL ABILITY",
         "question": "What is the missing number that should replace the question mark?",
-        "image": "images/NA-5.png",
+        "image": "images/NA-4.png",
         "options": { "A": "4", "B": "11", "C": "0", "D": "7", "E": "12", "F": "6" },
         "answer": "C"
       },
@@ -267,8 +267,8 @@
       { "id": 24, "type": "Applied reasoning", "question": "Suppose an organization encourages innovation but criticizes failed attempts publicly. What is the most likely outcome?\nQ24. → C\nPublic criticism of failure discourages risk-taking.", "options": ["Increase in creative risk-taking", "Balanced innovation and stability", "Reduced willingness to experiment", "Higher transparency in failures"], "answer": "Reduced willingness to experiment" },
       { "id": 25, "type": "Applied reasoning", "question": "During a project discussion, you realize that your idea is better than the one currently accepted, but the team has already moved forward. What should you do?\nQ25. → C\nRight timing + evaluation avoids disruption and adds value.", "options": ["Interrupt and insist on revisiting your idea", "Let it go completely", "Evaluate impact and suggest improvement at the right moment", "Privately criticize the decision later"], "answer": "Evaluate impact and suggest improvement at the right moment" },
       { "id": 26, "type": "Applied reasoning", "question": "A team leader gives equal attention to all members regardless of performance differences. What is the most likely long-term effect?\nQ26. → A\nHigh performers feel unrecognized when treated equally.", "options": ["High performers may feel undervalued", "Team productivity will maximize", "Competition will increase positively", "Performance gaps will reduce automatically"], "answer": "High performers may feel undervalued" },
-      { "id": 27, "type": "Applied reasoning", "question": "You are working in an environment where quick decisions are valued more than accurate ones. What is the BEST personal strategy?\nQ27. → C\nPractical balance fits real-world constraints.", "options": ["Always prioritize speed", "Focus only on accuracy", "Balance speed with acceptable accuracy levels", "Avoid decision-making roles"], "answer": "Balance speed with acceptable accuracy levels" },
-      { "id": 28, "type": "Applied reasoning", "question": "A colleague frequently takes credit for shared work but also contributes significantly behind the scenes. What is the BEST way to respond?\nQ28. → C\nPrivate discussion resolves issue without damaging teamwork.", "options": ["Publicly confront them immediately", "Ignore since they contribute", "Address the issue privately and clarify contributions", "Stop collaborating with them"], "answer": "Address the issue privately and clarify contributions" },
+      { "id": 27, "type": "Applied reasoning", "question": "You are working in an environment where quick decisions are valued more than accurate ones. What is the BEST personal strategy?", "options": ["Always prioritize speed", "Focus only on accuracy", "Balance speed with acceptable accuracy levels", "Avoid decision-making roles"], "answer": "Balance speed with acceptable accuracy levels" },
+      { "id": 28, "type": "Applied reasoning", "question": "A colleague frequently takes credit for shared work but also contributes significantly behind the scenes. What is the BEST way to respond?", "options": ["Publicly confront them immediately", "Ignore since they contribute", "Address the issue privately and clarify contributions", "Stop collaborating with them"], "answer": "Address the issue privately and clarify contributions" },
       { "id": 29, "type": "Applied reasoning", "question": "In a system where instructions frequently change midway through tasks, what is the most effective approach?\nQ29. → C\nAdaptability is key in dynamic environments.", "options": ["Wait for final instructions before starting", "Continue without adapting", "Build flexibility and regularly realign with updates", "Ignore changes and finish initial plan"], "answer": "Build flexibility and regularly realign with updates" },
       { "id": 30, "type": "Applied reasoning", "question": "You notice that when feedback is given in a group, some members become defensive and disengaged. What is the BEST approach to improve this?\nQ30. → C\nPrivate feedback reduces defensiveness and improves acceptance.", "options": ["Stop giving feedback entirely", "Continue the same method", "Provide sensitive feedback privately when needed", "Give harsher feedback to build resilience"], "answer": "Provide sensitive feedback privately when needed" }
     ]
@@ -399,9 +399,9 @@
       {
         "id": 10,
         "type": "Verbal reasoning",
-        "question": "Which two words do not belong?",
-        "options": ["Republican", "Doctor", "Professor", "Accountant", "Carpenter", "Humanist"],
-        "answer": "Republican, Humanist"
+        "question": "Which word does not belong?",
+        "options": ["Doctor", "Professor", "Accountant", "Carpenter", "Humanist"],
+        "answer": "Humanist"
       },
       {
         "id": 16,
@@ -494,7 +494,7 @@
           "C) Those who have cars also have a helmet.",
           "D) Those who have helmets also have a bike."
         ],
-        "answer": "D"
+        "answer": "C"
       },
       {
         "id": 8,
@@ -522,7 +522,7 @@
         "type": "Logical reasoning",
         "question": "A rectangular area of side 9 and 6 units is to be covered by square tiles of sides 1, 2 and 5 units. The minimum number of tiles needed for this is",
         "options": ["A) 13", "B) 11", "C) 12", "D) 15"],
-        "answer": "A"
+        "answer": "C"
       },
       {
         "id": 12,
@@ -550,12 +550,12 @@
         "type": "Logical reasoning",
         "question": "If TRANSFER is coded as RTNAFSRE, then ELEPHANT would be coded as",
         "options": ["A) LEPEHATN", "B) LEEPAHTN", "C) LEPEAHTN", "D) LEPEAHNT"],
-        "answer": "B"
+        "answer": "C"
       },
       {
         "id": 21,
         "type": "Logical reasoning",
-        "question": "All good athletes want to win and all athletes who want to win eat a well-balanced diet; therefore all athletes who do not cat a well-balanced diet are bad athletes.\nThe best conclusion from this statement is that",
+        "question": "All good athletes want to win and all athletes who want to win eat a well-balanced diet; therefore all athletes who do not eat a well-balanced diet are bad athletes.\nThe best conclusion from this statement is that",
         "options": ["A) No bad athlete wants to win.", "B) No athlete who does not eat a well-balanced diet is a good athlete.", "C) Every athlete who eats a well-balanced diet is a good athlete.", "D) All athletes who want to win are good athletes."],
         "answer": "B"
       },
@@ -587,7 +587,7 @@
         "type": "Logical reasoning",
         "question": "In a certain code language, BEAT is written as YVZG. Then what will be the code of MILD?",
         "options": ["A) ONRW", "B) NOWR", "C) ONWR", "D) NROW"],
-        "answer": ""
+        "answer": "D"
       },
       {
         "id": 7,
@@ -608,7 +608,7 @@
         "type": "Logical reasoning",
         "question": "Q4. A, B, C, D, E, F and G are members of a family consisting of four adults and three children, two of whom, F and G are girls. A and D are brothers and A is a doctor. E is an engineer married to one of the brothers and has two children. B is married to D and G is their child. Who is C?",
         "options": ["A) E’s daughter", "B) G’s brother", "C) F’s father", "D) A’s son"],
-        "answer": "C"
+        "answer": "D"
       },
       {
         "id": 22,
@@ -628,7 +628,7 @@
         "id": 24,
         "type": "Logical reasoning",
         "question": "Five students – A, B, C, D and E – scored different marks in a class. B scored more than D but less than C. C did not score the highest marks. A scored more than B but neither scored the highest or the second highest marks. The one who scored the second least marks got 52 and the one who scored the second highest marks got 94. What is the possible score of A?",
-        "options": ["A) 96", "B) 60", "C) 52", "D) 40"],
+        "options": ["96", "60", "52", "40"],
         "answer": "B"
       },
       {
@@ -649,7 +649,7 @@
         "id": 27,
         "type": "Logical reasoning",
         "question": "A, B, C, D, E and F are six friends sitting around a round table. D is to the right of A and B is to the left of C. F - D and B - E are two pairs of persons sitting opposite each other. Who is sitting to the left of F?",
-        "options": ["A) A", "B) B", "C) C", "D) E", "E) D"],
+        "options": ["A", "B", "C", "E", "D"],
         "answer": "D"
       },
       {
@@ -666,7 +666,7 @@
         "question": "Select a suitable option that would complete the series.",
         "image": "images/LR-4.png",
         "options": { "A": "images/LR4-A.png", "B": "images/LR4-B.png", "C": "images/LR4-C.png", "D": "images/LR4-D.png" },
-        "answer": "C"
+        "answer": "C" 
       },
       {
         "id": "LR-5",
