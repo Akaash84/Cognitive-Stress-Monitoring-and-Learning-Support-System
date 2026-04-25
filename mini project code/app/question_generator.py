@@ -1013,6 +1013,7 @@ def get_working_memory_questions(level):
         return [
             {
                 "id": "WM-M1",
+                "domain": "memory",
                 "type": "recall_letter_sequence",
                 "memory_display": "K, D, L, C, B, A",
                 "question": "What letter appeared two positions before B?",
@@ -1021,6 +1022,7 @@ def get_working_memory_questions(level):
             },
             {
                 "id": "WM-M2",
+                "domain": "memory",
                 "type": "recall_number_sequence",
                 "memory_display": "3, 8, 2, 9, 5",
                 "question": "Recall the numbers in reverse order.",
@@ -1029,6 +1031,7 @@ def get_working_memory_questions(level):
             },
             {
                 "id": "WM-M3",
+                "domain": "memory",
                 "type": "recall_sequence_order",
                 "memory_display": "F, J, K, L, S, R, Q",
                 "question": "What are the last three letters in order?",
@@ -1037,6 +1040,7 @@ def get_working_memory_questions(level):
             },
             {
                 "id": "WM-M4",
+                "domain": "memory",
                 "type": "recall_add_and_reverse",
                 "memory_display": "4, 9, 15",
                 "question": "Add 5 to each and report in reverse order.",
@@ -1045,6 +1049,7 @@ def get_working_memory_questions(level):
             },
             {
                 "id": "WM-M5",
+                "domain": "memory",
                 "type": "grid_memory",
                 "question": "Random 3 cells will be highlighted for 5 seconds. After that select the highlighted cells."
             }
@@ -1053,11 +1058,40 @@ def get_working_memory_questions(level):
     return [
         {
             "id": "WM-H1",
+            "domain": "memory",
             "type": "wm_image",
-            "question": "Observe the image carefully and recall objects"
+            "question": "Observe the image carefully and recall objects",
+            "answer_items": [
+                "basketball",
+                "glasses",
+                "watch",
+                "banana",
+                "shoe",
+                "scissors",
+                "apple",
+                "headphones",
+                "pencil",
+                "eraser",
+                "alarm clock",
+                "coffee cup",
+                "color pencils",
+                "notebook",
+                "magnifier",
+                "toothpaste",
+                "pen",
+                "keys",
+                "lipstick",
+                "wallet",
+                "teddy bear",
+                "water bottle",
+                "backpack",
+                "building blocks",
+                "sticky notes"
+            ]
         },
         {
             "id": "WM-H2",
+            "domain": "memory",
             "type": "wm_pattern",
             "question": "Identify the change between Pattern A and Pattern B",
             "options": [
@@ -1112,6 +1146,13 @@ def generate_test(test_type="foundation"):
         random.shuffle(test)
         return test
 
+    domain_map = {
+        "NUMERICAL": "mathematical",
+        "LOGICAL": "logical",
+        "VERBAL": "verbal",
+        "APPLIED": "applied",
+    }
+
     for name, pool in domains.items():
 
         if not pool:
@@ -1120,7 +1161,14 @@ def generate_test(test_type="foundation"):
 
         st.write(f"{name} → {len(pool)} questions found ✅")
 
-        test.extend(pick_random(pool, 10))
+        selected = pick_random(pool, 10)
+        normalized = []
+        for q in selected:
+            if isinstance(q, dict):
+                q_copy = dict(q)
+                q_copy["domain"] = domain_map.get(name, q_copy.get("domain", ""))
+                normalized.append(q_copy)
+        test.extend(normalized)
 
     test.extend(get_working_memory_questions(level))
 
@@ -1150,6 +1198,7 @@ def countdown(key, sec=10):
 
 def render_memory(q, answer_key=None):
     answer_key = answer_key or q["id"]
+    stable_answer_key = f"{q['id']}_answer"
 
     # 🔴 WM-H1 → IMAGE RECALL
     if q["type"] == "wm_image":
@@ -1169,7 +1218,16 @@ def render_memory(q, answer_key=None):
             st.rerun()
 
         else:
-            st.text_input("List objects you remember", key=answer_key)
+            # Keep answer in both an index-based key (for current screen)
+            # and a stable question-id key (for revisit/navigation reliability).
+            if (
+                (answer_key not in st.session_state or not str(st.session_state.get(answer_key, "")).strip())
+                and str(st.session_state.get(stable_answer_key, "")).strip()
+            ):
+                st.session_state[answer_key] = st.session_state.get(stable_answer_key, "")
+
+            response = st.text_input("List objects you remember", key=answer_key)
+            st.session_state[stable_answer_key] = response
 
     # 🔴 WM-H2 → PATTERN MEMORY
     elif q["type"] == "wm_pattern":
@@ -1228,6 +1286,7 @@ def render_memory(q, answer_key=None):
                 st.session_state[answer_key] = ""
             else:
                 st.session_state[answer_key] = selection
+            st.session_state[stable_answer_key] = st.session_state[answer_key]
 
     # MEDIUM MEMORY
 

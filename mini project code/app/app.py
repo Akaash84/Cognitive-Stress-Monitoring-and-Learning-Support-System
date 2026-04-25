@@ -7,6 +7,7 @@ from datetime import datetime
 from pathlib import Path
 import re
 import random
+from difflib import SequenceMatcher
 import pandas as pd
 import altair as alt
 from typing import Optional
@@ -456,14 +457,27 @@ def _is_mcq_answer_correct(question, user_answer, correct_answer):
     for key, value in iterable:
         key_token = _normalize_answer_token(key)
         value_token = _normalize_answer_token(value)
+        value_without_prefix = _normalize_answer_token(
+            re.sub(r"^\s*[A-Za-z]\s*[\)\.\-:]\s*", "", str(value))
+        )
 
-        # Accept either the option key/letter or the option value for comparisons.
-        if (user_token == key_token and correct_token == key_token) or (
-            user_token == value_token and correct_token == value_token
+        key_matches = {key_token}
+        value_matches = {value_token}
+        if value_without_prefix:
+            value_matches.add(value_without_prefix)
+
+        user_matches_key = user_token in key_matches
+        user_matches_value = user_token in value_matches
+        correct_matches_key = correct_token in key_matches
+        correct_matches_value = correct_token in value_matches
+
+        # Accept either key/letter or value text as long as both map to same option.
+        if (user_matches_key and correct_matches_key) or (
+            user_matches_value and correct_matches_value
         ):
             return True
-        if (user_token == key_token and correct_token == value_token) or (
-            user_token == value_token and correct_token == key_token
+        if (user_matches_key and correct_matches_value) or (
+            user_matches_value and correct_matches_key
         ):
             return True
 
@@ -1851,6 +1865,19 @@ def submit_test():
     domain_scores = {"logical": 0.0, "mathematical": 0.0, "verbal": 0.0, "applied": 0.0, "memory": 0.0}
 
     def infer_domain(question: dict) -> Optional[str]:
+        explicit_domain = str(question.get("domain", "")).strip().lower()
+        alias = {
+            "math": "mathematical",
+            "mathematics": "mathematical",
+            "numerical": "mathematical",
+            "num": "mathematical",
+        }
+        if explicit_domain:
+            if explicit_domain in domain_scores:
+                return explicit_domain
+            if explicit_domain in alias:
+                return alias[explicit_domain]
+
         qtype = str(question.get("type", "")).strip().lower()
         if qtype in {
             "word_memory",
@@ -1879,15 +1906,98 @@ def submit_test():
             return "mathematical"
         return None
 
-    def token_list(raw_text):
-        return [item.strip().lower() for item in raw_text.split() if item.strip()]
+    def memory_item_list(raw_text):
+        text = str(raw_text or "").lower()
+        text = re.sub(r"[^a-z0-9,\s]+", " ", text)
+        parts = [p.strip() for p in re.split(r"[,\n]+", text) if p.strip()]
+        if not parts:
+            parts = [p.strip() for p in text.split() if p.strip()]
 
-    def overlap_fraction(correct_items, user_items):
-        if not correct_items:
+        alias = {
+            "spectacles": "glasses",
+            "goggles": "glasses",
+            "sneaker": "shoe",
+            "sneakers": "shoe",
+            "clock": "alarm clock",
+            "cup": "coffee cup",
+            "mug": "coffee cup",
+            "colours": "color pencils",
+            "colors": "color pencils",
+            "colour pencils": "color pencils",
+            "pencils": "color pencils",
+            "magnifying glass": "magnifier",
+            "tooth paste": "toothpaste",
+            "key": "keys",
+            "bear": "teddy bear",
+            "teddy": "teddy bear",
+            "bottle": "water bottle",
+            "bag": "backpack",
+            "blocks": "building blocks",
+            "notes": "sticky notes",
+        }
+        normalized = []
+        for item in parts:
+            token = re.sub(r"\s+", " ", item).strip()
+            token = alias.get(token, token)
+            normalized.append(token)
+        return normalized
+
+    def _stem_token(token: str) -> str:
+        t = token.strip().lower()
+        for suffix in ("ing", "edly", "edly", "ed", "es", "s"):
+            if len(t) > 4 and t.endswith(suffix):
+                return t[: -len(suffix)]
+        return t
+
+    def _normalize_phrase_for_nlp(phrase: str) -> str:
+        words = [_stem_token(w) for w in re.split(r"\s+", phrase.strip().lower()) if w.strip()]
+        return " ".join(words)
+
+    def _phrase_similarity(a: str, b: str) -> float:
+        a_norm = _normalize_phrase_for_nlp(a)
+        b_norm = _normalize_phrase_for_nlp(b)
+        if not a_norm or not b_norm:
             return 0.0
-        correct_set = set(correct_items)
-        user_set = set(user_items)
-        return len(correct_set.intersection(user_set)) / len(correct_set)
+        if a_norm == b_norm:
+            return 1.0
+        a_tokens = set(a_norm.split())
+        b_tokens = set(b_norm.split())
+        token_overlap = len(a_tokens.intersection(b_tokens)) / max(1, len(a_tokens.union(b_tokens)))
+        char_sim = SequenceMatcher(None, a_norm, b_norm).ratio()
+        return 0.6 * token_overlap + 0.4 * char_sim
+
+    def _nlp_recall_score(correct_items, user_items):
+        """
+        Lightweight NLP-style scoring:
+        - semantic-ish phrase matching (token overlap + fuzzy char similarity)
+        - one-to-one greedy matching to avoid counting the same correct item twice
+        - mild penalty for unmatched extra guesses
+        """
+        correct = [c for c in correct_items if c]
+        user = [u for u in user_items if u]
+        if not correct or not user:
+            return 0.0
+
+        used_user_idx = set()
+        match_scores = []
+        for c in correct:
+            best_score = 0.0
+            best_idx = None
+            for idx, u in enumerate(user):
+                if idx in used_user_idx:
+                    continue
+                sim = _phrase_similarity(c, u)
+                if sim > best_score:
+                    best_score = sim
+                    best_idx = idx
+            if best_idx is not None and best_score >= 0.55:
+                used_user_idx.add(best_idx)
+                match_scores.append(best_score)
+
+        matched_strength = sum(match_scores)
+        extra_unmatched = max(0, len(user) - len(used_user_idx))
+        raw = (matched_strength - 0.2 * extra_unmatched) / len(correct)
+        return max(0.0, min(1.0, raw))
 
     def add_review_row(index, question_type, prompt, user_answer, correct_answer, marks, result, explanation=""):
         review_rows.append(
@@ -1902,6 +2012,18 @@ def submit_test():
                 "result": result,
             }
         )
+
+    def get_text_memory_answer(index: int) -> str:
+        """
+        Memory text inputs can live in either `user_answer_{idx}` (direct widget key)
+        or mirrored `answers[idx]` depending on render path/reruns.
+        Use both so attempted-count and scoring stay consistent.
+        """
+        direct = st.session_state.get(f"user_answer_{index}", "")
+        if direct is not None and str(direct).strip():
+            return str(direct).strip()
+        mirrored = st.session_state.answers.get(index, "")
+        return str(mirrored).strip() if mirrored is not None else ""
 
     for i, q in enumerate(st.session_state.questions):
         marks = 0.0
@@ -2018,13 +2140,13 @@ def submit_test():
 
         # -------- WORD MEMORY --------
         elif q.get("type") in {"word_memory", "wm_sequence"}:
-            user_raw = st.session_state.get(f"user_answer_{i}", "").strip()
+            user_raw = get_text_memory_answer(i)
             correct_words = [item.lower() for item in st.session_state.get(f"memory_words_{i}", [])]
-            user_words = token_list(user_raw)
+            user_words = memory_item_list(user_raw)
 
             if user_raw:
                 attempted_questions += 1
-                marks = rules["memory_max"] * overlap_fraction(correct_words, user_words)
+                marks = rules["memory_max"] * _nlp_recall_score(correct_words, user_words)
                 if marks >= 0.99:
                     result = "Correct"
                 elif marks > 0:
@@ -2053,7 +2175,7 @@ def submit_test():
 
         # -------- NUMBER MEMORY --------
         elif q.get("type") in {"number_memory", "wm_numbers"}:
-            user_raw = st.session_state.get(f"user_answer_{i}", "").strip()
+            user_raw = get_text_memory_answer(i)
             correct_text = "".join(map(str, st.session_state.get(f"numbers_{i}", [])))
 
             if user_raw:
@@ -2090,13 +2212,17 @@ def submit_test():
 
         # -------- IMAGE MEMORY --------
         elif q.get("type") in {"image_memory", "wm_image"}:
-            user_raw = st.session_state.get(f"user_answer_{i}", "").strip()
-            correct_images = [item.lower() for item in st.session_state.get(f"shown_images_{i}", [])]
-            user_images = token_list(user_raw)
+            user_raw = get_text_memory_answer(i)
+            if q.get("type") == "wm_image":
+                configured_answers = q.get("answer_items", []) or []
+                correct_images = memory_item_list(" , ".join(configured_answers))
+            else:
+                correct_images = [item.lower() for item in st.session_state.get(f"shown_images_{i}", [])]
+            user_images = memory_item_list(user_raw)
 
             if user_raw:
                 attempted_questions += 1
-                marks = rules["memory_max"] * overlap_fraction(correct_images, user_images)
+                marks = rules["memory_max"] * _nlp_recall_score(correct_images, user_images)
                 if marks >= 0.99:
                     result = "Correct"
                 elif marks > 0:
@@ -2161,13 +2287,13 @@ def submit_test():
 
         # -------- NBACK / IMAGE ORDER MEMORY --------
         elif q.get("type") == "nback":
-            user_raw = st.session_state.get(f"user_answer_{i}", "").strip()
+            user_raw = get_text_memory_answer(i)
             correct_seq = [item.lower() for item in st.session_state.get(f"nback_images_{i}", [])]
-            user_seq = token_list(user_raw)
+            user_seq = memory_item_list(user_raw)
 
             if user_raw:
                 attempted_questions += 1
-                marks = rules["memory_max"] * overlap_fraction(correct_seq, user_seq)
+                marks = rules["memory_max"] * _nlp_recall_score(correct_seq, user_seq)
                 if marks >= 0.99:
                     result = "Correct"
                 elif marks > 0:
@@ -2943,7 +3069,9 @@ def render_exam_page(username):
         if "options" in q:
             return st.session_state.answers.get(idx) is not None
         if q.get("type") in {"word_memory", "number_memory", "image_memory", "nback", "wm_image", "wm_pattern"}:
-            return st.session_state.get(f"user_answer_{idx}", "") != ""
+            raw_direct = str(st.session_state.get(f"user_answer_{idx}", "") or "").strip()
+            raw_mirrored = str(st.session_state.answers.get(idx, "") or "").strip()
+            return bool(raw_direct or raw_mirrored)
         if q.get("type") == "grid_memory":
             return len(st.session_state.get(f"user_answer_{idx}", [])) > 0
         return False
@@ -2974,19 +3102,34 @@ def render_exam_page(username):
         m4.metric("Tab Switch Violations", st.session_state.tab_switch_violations)
 
         ds = st.session_state.domain_scores or {}
-        eligibility = "Eligible for Advanced" if st.session_state.get("advanced_unlocked", False) else "Not yet eligible"
+        is_foundation = st.session_state.get("current_test_type") == "foundation"
+        st.markdown("#### Domain-wise Score")
+        d1, d2, d3, d4, d5 = st.columns(5)
+        d1.metric("Logical", f"{ds.get('logical', 0):.2f}")
+        d2.metric("Math", f"{ds.get('mathematical', 0):.2f}")
+        d3.metric("Verbal", f"{ds.get('verbal', 0):.2f}")
+        d4.metric("Applied", f"{ds.get('applied', 0):.2f}")
+        d5.metric("Memory", f"{ds.get('memory', 0):.2f}")
+
+        if is_foundation:
+            eligibility = "Eligible for Advanced" if st.session_state.get("advanced_unlocked", False) else "Not yet eligible"
+            requirement_line = (
+                "Requirement (Foundation): Logical &gt; <strong>6</strong>, Math &gt; <strong>6</strong>, "
+                "Verbal &gt; <strong>6</strong>, Applied &gt; <strong>6</strong>, Memory &gt; <strong>2</strong>."
+            )
+            status_line = f"Status: <strong>{eligibility}</strong>"
+            card_title = "Eligibility"
+        else:
+            requirement_line = "Advanced test completed. Domain-wise performance is shown above."
+            status_line = ""
+            card_title = "Advanced Summary"
+
         st.markdown(
             f"<div style='margin-top:10px;padding:12px 14px;border-radius:14px;background:rgba(2,6,23,0.28);border:1px solid rgba(148,163,184,0.20);'>"
-            f"<div style='font-weight:800;color:rgba(241,245,249,0.95);'>Eligibility</div>"
+            f"<div style='font-weight:800;color:rgba(241,245,249,0.95);'>{card_title}</div>"
             f"<div style='color:rgba(203,213,225,0.9);margin-top:6px;line-height:1.6;'>"
-            f"Requirement (Foundation): Logical &gt; <strong>6</strong>, Math &gt; <strong>6</strong>, Verbal &gt; <strong>6</strong>, Applied &gt; <strong>6</strong>, Memory &gt; <strong>2</strong>."
-            f"<br/>Your domain scores: "
-            f"Logical <strong>{ds.get('logical', 0):.2f}</strong> · "
-            f"Math <strong>{ds.get('mathematical', 0):.2f}</strong> · "
-            f"Verbal <strong>{ds.get('verbal', 0):.2f}</strong> · "
-            f"Applied <strong>{ds.get('applied', 0):.2f}</strong> · "
-            f"Memory <strong>{ds.get('memory', 0):.2f}</strong>."
-            f"<br/>Status: <strong>{eligibility}</strong></div>"
+            f"{requirement_line}"
+            f"{('<br/>' + status_line) if status_line else ''}</div>"
             f"</div>",
             unsafe_allow_html=True,
         )
@@ -3166,16 +3309,28 @@ def render_exam_page(username):
             render_recall_memory_question(current_idx, question)
 
         elif question.get("type") in {"wm_image", "wm_pattern"}:
+            answer_key = f"user_answer_{current_idx}"
+            stable_key = f"{question['id']}_answer"
+            # Pre-hydrate BEFORE widget creation to avoid Streamlit key-mutation errors.
+            if (answer_key not in st.session_state or not str(st.session_state.get(answer_key, "")).strip()) and str(
+                st.session_state.get(stable_key, "") or ""
+            ).strip():
+                st.session_state[answer_key] = st.session_state.get(stable_key, "")
+
             if question.get("type") == "wm_pattern":
                 seen_key = f"{question['id']}_seen"
                 if st.session_state.last_question_idx != current_idx:
-                    if not st.session_state.get(f"user_answer_{current_idx}"):
+                    if not st.session_state.get(answer_key):
                         st.session_state.pop(seen_key, None)
                         st.session_state.pop(f"{question['id']}_timer_start", None)
 
             st.markdown(f"<div class='question-text'>{question.get('question', 'Image Memory')}</div>", unsafe_allow_html=True)
-            render_memory(question, answer_key=f"user_answer_{current_idx}")
-            st.session_state.answers[current_idx] = st.session_state.get(f"user_answer_{current_idx}", None)
+            render_memory(question, answer_key=answer_key)
+            stable_answer = st.session_state.get(stable_key, None)
+            index_answer = st.session_state.get(answer_key, None)
+            st.session_state.answers[current_idx] = (
+                stable_answer if stable_answer is not None and str(stable_answer).strip() else index_answer
+            )
 
         elif "options" in question:
             option_items = _build_option_items(question["options"])
@@ -3191,7 +3346,10 @@ def render_exam_page(username):
                     default_index = idx
                     break
 
-            st.markdown(f"<div class='question-text'>{question['question']}</div>", unsafe_allow_html=True)
+            question_prompt = str(question.get("question", "")).strip()
+            if not question_prompt:
+                question_prompt = "Observe the figure/question and choose the best option."
+            st.markdown(f"<div class='question-text'>{question_prompt}</div>", unsafe_allow_html=True)
 
             # If any option is an image, render image tiles with select buttons
             if any(item["image_path"] is not None for item in option_items):
@@ -3218,11 +3376,7 @@ def render_exam_page(username):
                             circle = "◉" if selected_now else "◯"
                             label = f"{circle} {item['key']}"
                             if st.button(label, key=f"select_{current_idx}_{item['key']}"):
-                                st.session_state.answers[current_idx] = item["value"]
-
-                            # visually mark selection with a subtle success box
-                            if selected_now:
-                                st.markdown("<div style='background:#e6ffed;padding:8px;border-radius:6px;margin-top:6px;'>Selected</div>", unsafe_allow_html=True)
+                                st.session_state.answers[current_idx] = item["key"]
             else:
                 selected_label = st.radio(
                     "Select one option:",
@@ -3235,7 +3389,7 @@ def render_exam_page(username):
                     (item for item in option_items if item["label"] == selected_label),
                     None,
                 )
-                st.session_state.answers[current_idx] = selected_item["value"] if selected_item else None
+                st.session_state.answers[current_idx] = selected_item["key"] if selected_item else None
 
         elif question.get("input_type") == "text":
             st.markdown(f"<div class='question-text'>{question.get('question', 'Text Question')}</div>", unsafe_allow_html=True)
@@ -3271,6 +3425,16 @@ def render_exam_page(username):
             st.session_state.answers[current_idx] = st.session_state.get(f"user_answer_{current_idx}", None)
 
         else:
+            fallback_prompt = str(
+                question.get("question")
+                or question.get("prompt")
+                or "This question could not be rendered due to unsupported format."
+            ).strip()
+            st.markdown(f"<div class='question-text'>{fallback_prompt}</div>", unsafe_allow_html=True)
+            st.caption(
+                f"Unsupported question format (id={question.get('id', 'NA')}, type={question.get('type', 'NA')}). "
+                "Use Next to continue."
+            )
             st.session_state.answers[current_idx] = None
 
         memory_display_active = any(

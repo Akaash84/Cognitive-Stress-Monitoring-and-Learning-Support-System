@@ -189,7 +189,7 @@
       {
         "id": 24,
         "type": "NUMERICAL ABILITY",
-        "question": "The value of (-√-1)^(4n+7) is: (i = √-1)",
+        "question": "The value of (-√-1)^(4n+7) is(n>0: (i = √-1)",
         "options": ["0", "-1", "i", "-i"],
         "answer": "i"
       },
@@ -266,11 +266,11 @@
       { "id": 23, "type": "Applied reasoning", "question": "You are in a team where one member consistently delivers high-quality work but refuses to follow agreed timelines, causing delays for others. What is the BEST approach?\nQ23. → C\nBalances both quality and team coordination without conflict.", "options": ["Ignore the delays since quality is high", "Enforce strict deadlines without discussion", "Discuss balancing quality with team dependencies", "Reassign all their work"], "answer": "Discuss balancing quality with team dependencies" },
       { "id": 24, "type": "Applied reasoning", "question": "Suppose an organization encourages innovation but criticizes failed attempts publicly. What is the most likely outcome?\nQ24. → C\nPublic criticism of failure discourages risk-taking.", "options": ["Increase in creative risk-taking", "Balanced innovation and stability", "Reduced willingness to experiment", "Higher transparency in failures"], "answer": "Reduced willingness to experiment" },
       { "id": 25, "type": "Applied reasoning", "question": "During a project discussion, you realize that your idea is better than the one currently accepted, but the team has already moved forward. What should you do?\nQ25. → C\nRight timing + evaluation avoids disruption and adds value.", "options": ["Interrupt and insist on revisiting your idea", "Let it go completely", "Evaluate impact and suggest improvement at the right moment", "Privately criticize the decision later"], "answer": "Evaluate impact and suggest improvement at the right moment" },
-      { "id": 26, "type": "Applied reasoning", "question": "A team leader gives equal attention to all members regardless of performance differences. What is the most likely long-term effect?\nQ26. → A\nHigh performers feel unrecognized when treated equally.", "options": ["High performers may feel undervalued", "Team productivity will maximize", "Competition will increase positively", "Performance gaps will reduce automatically"], "answer": "High performers may feel undervalued" },
+      { "id": 26, "type": "Applied reasoning", "question": "A team leader gives equal attention to all members regardless of performance differences. What is the most likely long-term effect?\n", "options": ["High performers may feel undervalued", "Team productivity will maximize", "Competition will increase positively", "Performance gaps will reduce automatically"], "answer": "High performers may feel undervalued" },
       { "id": 27, "type": "Applied reasoning", "question": "You are working in an environment where quick decisions are valued more than accurate ones. What is the BEST personal strategy?", "options": ["Always prioritize speed", "Focus only on accuracy", "Balance speed with acceptable accuracy levels", "Avoid decision-making roles"], "answer": "Balance speed with acceptable accuracy levels" },
       { "id": 28, "type": "Applied reasoning", "question": "A colleague frequently takes credit for shared work but also contributes significantly behind the scenes. What is the BEST way to respond?", "options": ["Publicly confront them immediately", "Ignore since they contribute", "Address the issue privately and clarify contributions", "Stop collaborating with them"], "answer": "Address the issue privately and clarify contributions" },
       { "id": 29, "type": "Applied reasoning", "question": "In a system where instructions frequently change midway through tasks, what is the most effective approach?\nQ29. → C\nAdaptability is key in dynamic environments.", "options": ["Wait for final instructions before starting", "Continue without adapting", "Build flexibility and regularly realign with updates", "Ignore changes and finish initial plan"], "answer": "Build flexibility and regularly realign with updates" },
-      { "id": 30, "type": "Applied reasoning", "question": "You notice that when feedback is given in a group, some members become defensive and disengaged. What is the BEST approach to improve this?\nQ30. → C\nPrivate feedback reduces defensiveness and improves acceptance.", "options": ["Stop giving feedback entirely", "Continue the same method", "Provide sensitive feedback privately when needed", "Give harsher feedback to build resilience"], "answer": "Provide sensitive feedback privately when needed" }
+      { "id": 30, "type": "Applied reasoning", "question": "You notice that when feedback is given in a group, some members become defensive and disengaged. What is the BEST approach to improve this?", "options": ["Stop giving feedback entirely", "Continue the same method", "Provide sensitive feedback privately when needed", "Give harsher feedback to build resilience"], "answer": "Provide sensitive feedback privately when needed" }
     ]
    },
   "verbal_reasoning": {
@@ -412,11 +412,6 @@
         "answer": "Effective techniques matter more than study time"
       },
       {
-        "id": 17,
-        "type": "Verbal reasoning",
-        "question": "“Hard work beats talent when talent does not work hard.” Explain this statement in your own words with an example."
-      },
-      {
         "id": 18,
         "type": "Verbal reasoning",
         "question": "Despite the committee’s initial enthusiasm, the proposal was ultimately rejected because it failed to ______ the long-term implications of the policy.",
@@ -441,7 +436,7 @@
       {
         "id": 24,
         "type": "Verbal reasoning",
-        "question": "Rearrange the parts: The grocer P: did not listen to the protests of customer Q: who was in the habit of weighing less R: whom he had cheated S: with great audacity",
+        "question": "Rearrange the parts: The grocer \n P: did not listen to the protests of customer \n Q: who was in the habit of weighing less \n R: whom he had cheated \n S: with great audacity",
         "options": ["PRSQ", "QSPR", "QPRS", "PQSR"],
         "answer": "QPRS"
       },
