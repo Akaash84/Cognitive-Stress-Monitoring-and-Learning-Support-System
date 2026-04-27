@@ -7,6 +7,7 @@ from datetime import datetime
 from pathlib import Path
 import re
 import random
+import json
 from difflib import SequenceMatcher
 import pandas as pd
 import altair as alt
@@ -135,22 +136,62 @@ def _get_serial_connection(port: str, baud: int):
 
 def _parse_arduino_line(line: str) -> dict:
     """
-    Expected examples:
-    IR=12345, BPM=72.12, Avg BPM=70
-    IR=12345, BPM=0.00, Avg BPM=0 No finger?
+    Supports:
+    1) Legacy lines:
+       IR=12345, BPM=72.12, Avg BPM=70
+    2) Table rows from your MAX30102 sketch:
+       78 bpm  |  34.6 ms  |  4.12 / 10  |  Mild
+    3) Optional JSON:
+       {"bpm":78,"rmssd":34.6,"stress":4.12}
     """
     if not line:
         return {}
-    if "No finger" in line:
+
+    text = str(line).strip()
+    lowered = text.lower()
+    if "no finger" in lowered or "no data" in lowered:
         return {"no_finger": True}
 
-    m_avg = re.search(r"Avg\s*BPM\s*=\s*(\d+)", line)
-    m_bpm = re.search(r"\bBPM\s*=\s*([0-9]+(?:\.[0-9]+)?)", line)
     out: dict = {}
+
+    # JSON output mode from sketch (if enabled there).
+    if text.startswith("{") and text.endswith("}"):
+        try:
+            payload = json.loads(text)
+            bpm = payload.get("bpm")
+            rmssd = payload.get("rmssd")
+            stress = payload.get("stress")
+            if bpm is not None:
+                out["avg_bpm"] = float(bpm)
+                out["bpm"] = float(bpm)
+            if rmssd is not None:
+                out["rmssd_ms"] = float(rmssd)
+            if stress is not None:
+                out["stress_0_10"] = float(stress)
+            return out
+        except Exception:
+            pass
+
+    # Legacy parser.
+    m_avg = re.search(r"Avg\s*BPM\s*=\s*(\d+)", text, re.IGNORECASE)
+    m_bpm = re.search(r"\bBPM\s*=\s*([0-9]+(?:\.[0-9]+)?)", text, re.IGNORECASE)
     if m_avg:
-        out["avg_bpm"] = int(m_avg.group(1))
+        out["avg_bpm"] = float(m_avg.group(1))
     if m_bpm:
         out["bpm"] = float(m_bpm.group(1))
+
+    # New table-style parser: "<bpm> bpm | <rmssd> ms | <stress> / 10 | <level>"
+    m_row = re.search(
+        r"([0-9]+(?:\.[0-9]+)?)\s*bpm\s*\|\s*([0-9]+(?:\.[0-9]+)?)\s*ms\s*\|\s*([0-9]+(?:\.[0-9]+)?)\s*/\s*10",
+        text,
+        re.IGNORECASE,
+    )
+    if m_row:
+        out["avg_bpm"] = float(m_row.group(1))
+        out["bpm"] = float(m_row.group(1))
+        out["rmssd_ms"] = float(m_row.group(2))
+        out["stress_0_10"] = float(m_row.group(3))
+
     return out
 
 
@@ -189,6 +230,73 @@ def _stress_from_bpm(avg_bpm: float) -> float:
     except Exception:
         return 0.5
     return max(0.0, min(1.0, v))
+
+
+def _append_sensor_trace_sample(sample: dict) -> None:
+    if not isinstance(sample, dict) or sample.get("no_finger"):
+        return
+    avg_bpm = sample.get("avg_bpm")
+    if avg_bpm is None:
+        return
+    try:
+        bpm = float(avg_bpm)
+    except Exception:
+        return
+    if bpm <= 0:
+        return
+
+    stress_0_10 = sample.get("stress_0_10")
+    if stress_0_10 is None:
+        stress_01 = _stress_from_bpm(bpm)
+    else:
+        try:
+            stress_01 = max(0.0, min(1.0, float(stress_0_10) / 10.0))
+        except Exception:
+            stress_01 = _stress_from_bpm(bpm)
+
+    hrv_ms = sample.get("rmssd_ms")
+    try:
+        hrv_val = float(hrv_ms) if hrv_ms is not None else None
+    except Exception:
+        hrv_val = None
+
+    now = time.time()
+    last_ts = st.session_state.get("sensor_last_sample_ts", 0.0)
+    # Avoid duplicate points from the same rerender burst.
+    if now - float(last_ts) < 1.5:
+        return
+
+    trace = st.session_state.get("sensor_trace", [])
+    trace.append(
+        {
+            "ts": now,
+            "bpm": bpm,
+            "stress_01": stress_01,
+            "hrv_ms": hrv_val,
+        }
+    )
+    # Keep recent bounded history (about whole exam and beyond if needed).
+    st.session_state.sensor_trace = trace[-1500:]
+    st.session_state.sensor_last_sample_ts = now
+
+
+def _sensor_trace_stats(trace: list[dict]) -> dict:
+    if not trace:
+        return {}
+    bpms = [float(x["bpm"]) for x in trace if x.get("bpm") is not None]
+    stress = [float(x["stress_01"]) for x in trace if x.get("stress_01") is not None]
+    hrv = [float(x["hrv_ms"]) for x in trace if x.get("hrv_ms") is not None]
+    if not bpms or not stress:
+        return {}
+    return {
+        "samples": len(trace),
+        "avg_bpm": sum(bpms) / len(bpms),
+        "peak_bpm": max(bpms),
+        "avg_stress_01": sum(stress) / len(stress),
+        "peak_stress_01": max(stress),
+        "avg_hrv_ms": (sum(hrv) / len(hrv)) if hrv else None,
+        "min_hrv_ms": min(hrv) if hrv else None,
+    }
 
 
 def run_memory_display_countdown(state_key, seconds=5):
@@ -935,6 +1043,16 @@ def init_state():
         st.session_state.tab_switch_violations = 0
     if "current_test_type" not in st.session_state:
         st.session_state.current_test_type = "foundation"
+    if "sensor_trace" not in st.session_state:
+        st.session_state.sensor_trace = []
+    if "sensor_last_sample_ts" not in st.session_state:
+        st.session_state.sensor_last_sample_ts = 0.0
+    if "sensor_monitor_enabled" not in st.session_state:
+        st.session_state.sensor_monitor_enabled = False
+    if "sensor_monitor_port" not in st.session_state:
+        st.session_state.sensor_monitor_port = ""
+    if "sensor_monitor_baud" not in st.session_state:
+        st.session_state.sensor_monitor_baud = 115200
     if "selected_test_level" not in st.session_state:
         st.session_state.selected_test_level = "foundation"
     if "advanced_unlocked" not in st.session_state:
@@ -1814,6 +1932,8 @@ def start_test(mode, test_type="foundation"):
     st.session_state.tab_switch_violations = 0
     st.session_state.test_mode = mode
     st.session_state.test_duration_seconds = 25 * 60 if mode == "Exam" else 45 * 60
+    st.session_state.sensor_trace = []
+    st.session_state.sensor_last_sample_ts = 0.0
 
 
 def build_review_sheet_text(review_rows):
@@ -2378,6 +2498,8 @@ def reset_test_state():
     st.session_state.max_score = 0.0
     st.session_state.score_breakdown = {"positive": 0.0, "negative": 0.0, "partial": 0.0}
     st.session_state.tab_switch_violations = 0
+    st.session_state.sensor_trace = []
+    st.session_state.sensor_last_sample_ts = 0.0
 
 
 def is_test_active():
@@ -3065,6 +3187,58 @@ def render_exam_page(username):
     elapsed_seconds = int(time.time() - st.session_state.test_start_time)
     remaining_seconds = max(0, st.session_state.test_duration_seconds - elapsed_seconds)
 
+    # Optional live sensor monitoring during the test (captures stress trend).
+    with st.expander("Live Stress Monitor (during test)", expanded=False):
+        st.session_state.sensor_monitor_enabled = st.toggle(
+            "Monitor stress continuously while taking the test",
+            value=bool(st.session_state.get("sensor_monitor_enabled", False)),
+            help="Reads BPM/RMSSD/Stress from Arduino serial and stores a session trend.",
+            key="sensor_monitor_toggle",
+        )
+        if st.session_state.sensor_monitor_enabled:
+            ports = _list_serial_ports()
+            m1, m2 = st.columns([1.2, 0.8])
+            default_port = (
+                st.session_state.get("sensor_monitor_port")
+                or (ports[0] if ports else "COM5")
+            )
+            selected_port = m1.selectbox(
+                "Sensor COM Port",
+                options=ports if ports else [default_port],
+                index=0 if default_port not in ports else ports.index(default_port),
+                key="sensor_monitor_port_select",
+            )
+            st.session_state.sensor_monitor_port = str(selected_port)
+            st.session_state.sensor_monitor_baud = int(
+                m2.number_input(
+                    "Baud",
+                    min_value=1200,
+                    max_value=2000000,
+                    value=int(st.session_state.get("sensor_monitor_baud", 115200)),
+                    step=100,
+                    key="sensor_monitor_baud_input",
+                )
+            )
+            try:
+                ser = _get_serial_connection(
+                    st.session_state.sensor_monitor_port,
+                    st.session_state.sensor_monitor_baud,
+                )
+                sample = _read_latest_sensor_sample(ser)
+                _append_sensor_trace_sample(sample)
+                stats = _sensor_trace_stats(st.session_state.get("sensor_trace", []))
+                if sample.get("no_finger"):
+                    st.caption("Sensor status: no finger detected.")
+                elif stats:
+                    st.caption(
+                        f"Live monitor: {stats['samples']} samples | "
+                        f"Avg BPM {stats['avg_bpm']:.1f} | Peak stress {(stats['peak_stress_01'] * 10):.2f}/10"
+                    )
+                else:
+                    st.caption("Sensor connected. Waiting for valid signal samples...")
+            except Exception as e:
+                st.caption(f"Sensor monitor error: {e}")
+
     def is_answered(idx, q):
         if "options" in q:
             return st.session_state.answers.get(idx) is not None
@@ -3140,14 +3314,44 @@ def render_exam_page(username):
             use_hw = st.toggle(
                 "Use Arduino sensor (MAX30105)",
                 value=False,
-                help="Reads Avg BPM from your Arduino serial output (115200 baud).",
+                help="Reads BPM/RMSSD/Stress from Arduino serial output (115200 baud).",
             )
 
             heart_rate_bpm = 90.0
             stress_level = 0.5
+            hrv_ms = None
             hw_status = None
+            trace_stats = _sensor_trace_stats(st.session_state.get("sensor_trace", []))
+            use_session_stress = False
+            if trace_stats:
+                use_session_stress = st.toggle(
+                    "Use monitored test stress data",
+                    value=True,
+                    help="Uses stress history captured during the whole test session.",
+                    key="use_session_stress_toggle",
+                )
+                st.caption(
+                    f"Session stress trend: avg {(trace_stats['avg_stress_01'] * 10):.2f}/10, "
+                    f"peak {(trace_stats['peak_stress_01'] * 10):.2f}/10, "
+                    f"avg BPM {trace_stats['avg_bpm']:.1f}"
+                    + (
+                        f", avg RMSSD {trace_stats['avg_hrv_ms']:.1f} ms"
+                        if trace_stats.get("avg_hrv_ms") is not None
+                        else ""
+                    )
+                )
 
-            if use_hw:
+            if use_session_stress:
+                heart_rate_bpm = float(trace_stats["avg_bpm"])
+                stress_level = float(trace_stats["avg_stress_01"])
+                if trace_stats.get("avg_hrv_ms") is not None:
+                    hrv_ms = float(trace_stats["avg_hrv_ms"])
+                hw_status = (
+                    f"Using monitored session data: BPM={heart_rate_bpm:.1f}, "
+                    f"Stress={stress_level * 10:.2f}/10"
+                )
+                st.caption(hw_status)
+            elif use_hw:
                 ports = _list_serial_ports()
                 c1, c2, c3 = st.columns([1.1, 0.7, 1.2])
                 default_port = ports[0] if ports else "COM5"
@@ -3161,10 +3365,24 @@ def render_exam_page(username):
                         hw_status = "No finger detected. Place finger steadily."
                     else:
                         avg_bpm = sample.get("avg_bpm")
+                        rmssd_ms = sample.get("rmssd_ms")
+                        stress_0_10 = sample.get("stress_0_10")
                         if avg_bpm is not None and avg_bpm > 0:
                             heart_rate_bpm = float(avg_bpm)
-                            stress_level = float(_stress_from_bpm(heart_rate_bpm))
-                            hw_status = f"Live sensor: Avg BPM={int(heart_rate_bpm)} (stress≈{stress_level:.2f})"
+                            if rmssd_ms is not None:
+                                hrv_ms = float(rmssd_ms)
+                            if stress_0_10 is not None:
+                                stress_level = max(0.0, min(1.0, float(stress_0_10) / 10.0))
+                            else:
+                                stress_level = float(_stress_from_bpm(heart_rate_bpm))
+
+                            if hrv_ms is not None:
+                                hw_status = (
+                                    f"Live sensor: BPM={int(heart_rate_bpm)}, RMSSD={hrv_ms:.1f} ms, "
+                                    f"Stress={stress_level * 10:.2f}/10"
+                                )
+                            else:
+                                hw_status = f"Live sensor: BPM={int(heart_rate_bpm)} (stress≈{stress_level * 10:.2f}/10)"
                         else:
                             hw_status = "Waiting for sensor data..."
                 except Exception as e:
@@ -3202,6 +3420,7 @@ def render_exam_page(username):
                 memory=float(ds.get("memory", 0.0)),
                 heart_rate_bpm=float(heart_rate_bpm),
                 stress_level=float(stress_level),
+                hrv_ms=float(hrv_ms) if hrv_ms is not None else None,
             )
 
             st.markdown(
@@ -3211,6 +3430,13 @@ def render_exam_page(username):
             )
             for r in recs:
                 st.write(f"- {r}")
+            if trace_stats:
+                if trace_stats["peak_stress_01"] >= 0.8:
+                    st.write("- During the test, stress peaked high. Add a 60-90 second breathing reset before difficult sections.")
+                elif trace_stats["avg_stress_01"] >= 0.6:
+                    st.write("- Session stress stayed moderately elevated. Use shorter question blocks with micro-breaks.")
+                if trace_stats.get("avg_hrv_ms") is not None and trace_stats["avg_hrv_ms"] < 20:
+                    st.write("- Low average HRV detected in-session. Slow exhale-focused breathing may improve stability.")
 
         b1, b2, b3 = st.columns(3)
         b1.metric("Positive Marks", st.session_state.score_breakdown.get("positive", 0.0))
