@@ -1,7 +1,7 @@
 #trail 1 best
 import streamlit as st
 import streamlit.components.v1 as components
-import sqlite3
+from supabase_db import ensure_schema, get_history, save_submission as _save_submission
 import time
 from datetime import datetime
 from pathlib import Path
@@ -1855,50 +1855,20 @@ def apply_theme():
     )
 
 
-conn = sqlite3.connect("users.db", check_same_thread=False)
-cursor = conn.cursor()
-
-
-def ensure_schema():
-    cursor.execute(
-        """
-        CREATE TABLE IF NOT EXISTS users(
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE,
-            password TEXT
-        )
-        """
+def save_submission(username):
+    submitted_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    _save_submission(
+        username=username,
+        score=st.session_state.score,
+        time_taken_seconds=st.session_state.time_taken_seconds,
+        submitted_at=submitted_at,
     )
-    cursor.execute(
-        """
-        CREATE TABLE IF NOT EXISTS test_history(
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT,
-            score INTEGER,
-            time_taken_seconds INTEGER DEFAULT 0,
-            date TIMESTAMP DEFAULT (datetime('now','localtime'))
-        )
-        """
-    )
-    cursor.execute("PRAGMA table_info(test_history)")
-    history_columns = [column[1] for column in cursor.fetchall()]
-    if "time_taken_seconds" not in history_columns:
-        cursor.execute("ALTER TABLE test_history ADD COLUMN time_taken_seconds INTEGER DEFAULT 0")
-    conn.commit()
 
 
 def format_duration(total_seconds):
     minutes = total_seconds // 60
     seconds = total_seconds % 60
     return f"{minutes:02d}:{seconds:02d}"
-
-
-def get_history(username):
-    cursor.execute(
-        "SELECT score,time_taken_seconds,date FROM test_history WHERE username=? ORDER BY id ASC",
-        (username,),
-    )
-    return cursor.fetchall()
 
 
 def get_marking_rules(mode):
@@ -2473,13 +2443,7 @@ def submit_test():
                 st.session_state._just_unlocked_advanced = True
 
 
-def save_submission(username):
-    submitted_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    cursor.execute(
-        "INSERT INTO test_history(username,score,time_taken_seconds,date) VALUES (?,?,?,?)",
-        (username, st.session_state.score, st.session_state.time_taken_seconds, submitted_at),
-    )
-    conn.commit()
+## NOTE: save_submission(username) defined above now uses Supabase.
 
 
 def reset_test_state():
