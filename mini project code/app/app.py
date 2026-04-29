@@ -3,9 +3,11 @@ import streamlit as st
 import streamlit.components.v1 as components
 from supabase_db import (
     clear_health_data,
+    clear_questions_table,
     ensure_schema,
     fetch_health_summary_and_clear,
     get_history,
+    insert_question_timing,
     save_submission as _save_submission,
 )
 import time
@@ -38,6 +40,51 @@ except Exception:  # pragma: no cover
 st.set_page_config(page_title="Cognitive Assessment System", layout="wide")
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 IMAGES_DIR = PROJECT_ROOT / "data" / "images"
+
+
+def _cookie_set(key: str, value: str, max_age_seconds: int = 24 * 60 * 60) -> None:
+    # Best-effort cookie write (Streamlit can't reliably read cookies back without a custom component).
+    safe_key = json.dumps(str(key))
+    safe_val = json.dumps(str(value))
+    components.html(
+        f"""
+        <script>
+          document.cookie = {safe_key} + "=" + encodeURIComponent({safe_val})
+            + ";path=/;max-age={int(max_age_seconds)};SameSite=Lax";
+        </script>
+        """,
+        height=0,
+    )
+
+
+def _question_qid(question: dict, idx: int) -> str:
+    # Prefer explicit id; fallback to index-based id for safety.
+    raw = question.get("id") or question.get("qid") or f"q_{idx+1}"
+    return str(raw)
+
+
+def _question_timing_start_if_needed(question: dict, idx: int) -> None:
+    qid = _question_qid(question, idx)
+    starts = st.session_state.setdefault("_question_start_times", {})
+    if qid in starts:
+        return
+    ts = datetime.utcnow().isoformat()
+    starts[qid] = ts
+    _cookie_set(f"qid_start_{qid}", ts)
+
+
+def _question_timing_flush(question: dict, idx: int) -> None:
+    qid = _question_qid(question, idx)
+    starts = st.session_state.setdefault("_question_start_times", {})
+    st_time = starts.get(qid)
+    if not st_time:
+        # If we missed start capture (rare), start now and return without inserting.
+        _question_timing_start_if_needed(question, idx)
+        return
+    en_time = datetime.utcnow().isoformat()
+    insert_question_timing(qid=qid, st_time=str(st_time), en_time=str(en_time))
+    # Remove so revisits create a new segment.
+    starts.pop(qid, None)
 
 
 def _normalize_answer_token(value):
@@ -1865,6 +1912,8 @@ def save_submission(username):
     submitted_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     health_summary = fetch_health_summary_and_clear()
     st.session_state.health_summary = health_summary
+    # As requested: clear `questions` at submit time too (same time as `health_data` is cleared above).
+    clear_questions_table()
     _save_submission(
         username=username,
         score=st.session_state.score,
@@ -1894,7 +1943,9 @@ def start_test(mode, test_type="foundation"):
     st.session_state._just_unlocked_advanced = False
     st.session_state.show_submit_confirm = False
     clear_health_data()
+    clear_questions_table()
     st.session_state.health_summary = None
+    st.session_state._question_start_times = {}
     st.session_state.questions = generate_test(test_type)
     st.session_state.answers = {}
     st.session_state.score = None
@@ -3486,6 +3537,7 @@ def render_exam_page(username):
     with left_col:
         st.markdown('<div class="exam-shell">', unsafe_allow_html=True)
         question = st.session_state.questions[current_idx]
+        _question_timing_start_if_needed(question, current_idx)
         st.markdown(f"**Question {current_idx + 1} of {total_questions}**")
 
         st.markdown(
@@ -3660,6 +3712,7 @@ def render_exam_page(username):
             use_container_width=True,
             disabled=nav_disabled or current_idx == 0,
         ):
+            _question_timing_flush(question, current_idx)
             st.session_state.current_question_idx = current_idx - 1
             st.rerun()
         if nav_col2.button(
@@ -3667,6 +3720,7 @@ def render_exam_page(username):
             use_container_width=True,
             disabled=nav_disabled or current_idx == total_questions - 1,
         ):
+            _question_timing_flush(question, current_idx)
             st.session_state.current_question_idx = current_idx + 1
             st.rerun()
 
@@ -3705,6 +3759,7 @@ def render_exam_page(username):
                         disabled=st.session_state.submit_confirmation_text.strip().lower() != "submit",
                     ):
                         st.session_state.auto_submitted = False
+                        _question_timing_flush(question, current_idx)
                         submit_test()
                         st.session_state.show_submit_confirm = False
                         st.rerun()
@@ -3722,6 +3777,7 @@ def render_exam_page(username):
             button_label = str(idx + 1)
             col = palette_cols[idx % 4]
             if col.button(button_label, key=f"jump_{idx}", use_container_width=True):
+                _question_timing_flush(question, current_idx)
                 st.session_state.current_question_idx = idx
                 st.rerun()
 
@@ -3731,6 +3787,7 @@ def render_exam_page(username):
         and remaining_seconds == 0
     ):
         st.session_state.auto_submitted = True
+        _question_timing_flush(question, current_idx)
         submit_test()
         st.rerun()
 

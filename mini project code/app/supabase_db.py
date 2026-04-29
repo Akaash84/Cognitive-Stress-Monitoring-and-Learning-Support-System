@@ -130,6 +130,49 @@ def fetch_health_summary_and_clear() -> Dict[str, Any]:
     return summary
 
 
+def clear_questions_table() -> bool:
+    """
+    Clears all rows from Supabase table `questions` (question timing logs).
+    PostgREST requires a filter for deletes, so we use a broad `neq` filter.
+    """
+    try:
+        sb = _client()
+    except MissingSupabaseCredentials:
+        return False
+
+    try:
+        sb.table("questions").delete().neq("id", 0).execute()
+        return True
+    except Exception:
+        # Fallback if `id` column doesn't exist.
+        try:
+            sb.table("questions").delete().neq("qid", "").execute()
+            return True
+        except Exception:
+            return False
+
+
+def insert_question_timing(qid: str, st_time: str, en_time: str) -> bool:
+    """
+    Inserts one question timing row into Supabase table `questions`.
+    Expected columns: qid (text), st_time (timestamptz), en_time (timestamptz)
+    """
+    qid = str(qid or "").strip()
+    if not qid:
+        return False
+    try:
+        sb = _client()
+    except MissingSupabaseCredentials:
+        return False
+
+    res = (
+        sb.table("questions")
+        .insert({"qid": qid, "st_time": st_time, "en_time": en_time})
+        .execute()
+    )
+    return bool(getattr(res, "data", None))
+
+
 def create_user(username: str, password: str) -> bool:
     username = str(username or "").strip()
     password = str(password or "")
