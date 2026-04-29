@@ -1,6 +1,6 @@
 import os
 from datetime import datetime
-from typing import List, Tuple
+from typing import Any, Dict, List, Tuple
 
 from passlib.context import CryptContext
 from supabase import Client, create_client
@@ -57,6 +57,77 @@ def ensure_schema() -> None:
     Supabase tables are created in the Supabase dashboard/SQL editor.
     Keep this as a no-op so the app can keep calling ensure_schema().
     """
+
+
+def clear_health_data() -> bool:
+    """
+    Clears all rows from `health_data`.
+    PostgREST requires a filter for deletes, so we use a broad `neq` filter.
+    """
+    try:
+        sb = _client()
+    except MissingSupabaseCredentials:
+        return False
+
+    try:
+        res = sb.table("health_data").delete().neq("id", 0).execute()
+        _ = res  # silence unused var in some linters
+        return True
+    except Exception:
+        # Fallback in case `id` is not present; try a common timestamp column.
+        try:
+            sb.table("health_data").delete().neq("timestamp", "0001-01-01").execute()
+            return True
+        except Exception:
+            return False
+
+
+def fetch_health_summary_and_clear() -> Dict[str, Any]:
+    """
+    Returns a small summary of `health_data`, then clears the table.
+
+    Expected columns (based on your SQL):
+    - stress: numeric/float
+    - stress_level: text (e.g. 'low'|'moderate'|'high')
+    """
+    summary: Dict[str, Any] = {
+        "avg_stress": None,
+        "moderate_high_count": 0,
+        "row_count": 0,
+    }
+
+    try:
+        sb = _client()
+    except MissingSupabaseCredentials:
+        return summary
+
+    rows = []
+    try:
+        res = sb.table("health_data").select("stress,stress_level").execute()
+        rows = getattr(res, "data", None) or []
+    except Exception:
+        rows = []
+
+    stresses: List[float] = []
+    mh_count = 0
+    for r in rows:
+        stress = r.get("stress")
+        if stress is not None:
+            try:
+                stresses.append(float(stress))
+            except (TypeError, ValueError):
+                pass
+
+        lvl = str(r.get("stress_level") or "").strip().lower()
+        if lvl in {"moderate", "high"}:
+            mh_count += 1
+
+    summary["row_count"] = len(rows)
+    summary["moderate_high_count"] = mh_count
+    summary["avg_stress"] = (sum(stresses) / len(stresses)) if stresses else None
+
+    clear_health_data()
+    return summary
 
 
 def create_user(username: str, password: str) -> bool:
@@ -118,11 +189,19 @@ def login_user(username: str, password: str):
     return user
 
 
-def save_submission(username: str, score: float, time_taken_seconds: int, submitted_at: str | None = None) -> bool:
+def save_submission(
+    username: str,
+    score: float,
+    time_taken_seconds: int,
+    submitted_at: str | None = None,
+    test_type: str | None = None,
+    stress: float | None = None,
+) -> bool:
     username = str(username or "").strip()
     if not username:
         return False
 
+    test_type = str(test_type or "").strip() or "foundation"
     submitted_at = submitted_at or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     try:
         sb = _client()
@@ -136,6 +215,8 @@ def save_submission(username: str, score: float, time_taken_seconds: int, submit
                 "score": float(score),
                 "time_taken_seconds": int(time_taken_seconds),
                 "date": submitted_at,
+                "type": test_type,
+                **({"stress": float(stress)} if stress is not None else {}),
             }
         )
         .execute()

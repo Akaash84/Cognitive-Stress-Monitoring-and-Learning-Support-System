@@ -1,7 +1,13 @@
 #trail 1 best
 import streamlit as st
 import streamlit.components.v1 as components
-from supabase_db import ensure_schema, get_history, save_submission as _save_submission
+from supabase_db import (
+    clear_health_data,
+    ensure_schema,
+    fetch_health_summary_and_clear,
+    get_history,
+    save_submission as _save_submission,
+)
 import time
 from datetime import datetime
 from pathlib import Path
@@ -1857,11 +1863,15 @@ def apply_theme():
 
 def save_submission(username):
     submitted_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    health_summary = fetch_health_summary_and_clear()
+    st.session_state.health_summary = health_summary
     _save_submission(
         username=username,
         score=st.session_state.score,
         time_taken_seconds=st.session_state.time_taken_seconds,
         submitted_at=submitted_at,
+        test_type=st.session_state.get("current_test_type", "foundation"),
+        stress=health_summary.get("avg_stress"),
     )
 
 
@@ -1883,6 +1893,8 @@ def start_test(mode, test_type="foundation"):
     st.session_state.current_test_type = test_type
     st.session_state._just_unlocked_advanced = False
     st.session_state.show_submit_confirm = False
+    clear_health_data()
+    st.session_state.health_summary = None
     st.session_state.questions = generate_test(test_type)
     st.session_state.answers = {}
     st.session_state.score = None
@@ -3355,27 +3367,28 @@ def render_exam_page(username):
                 if hw_status:
                     st.caption(hw_status)
             else:
-                hr_col, stress_col, _ = st.columns([1, 1, 1])
-                heart_rate_bpm = float(
-                    hr_col.number_input(
-                        "Heart rate (bpm)",
-                        min_value=30,
-                        max_value=220,
-                        value=90,
-                        step=1,
-                        help="Temporary manual value until hardware is connected.",
-                    )
+                # Prefer showing collected `health_data` summary over manual sliders.
+                hs = st.session_state.get("health_summary") or {}
+                avg_stress = hs.get("avg_stress")
+                mh_count = int(hs.get("moderate_high_count") or 0)
+                row_count = int(hs.get("row_count") or 0)
+
+                c1, c2, c3 = st.columns(3)
+                c1.metric("Health samples", row_count)
+                c2.metric("Moderate/High count", mh_count)
+                c3.metric(
+                    "Avg stress",
+                    f"{float(avg_stress):.2f}" if avg_stress is not None else "N/A",
                 )
-                stress_level = float(
-                    stress_col.slider(
-                        "Stress level (0–1)",
-                        min_value=0.0,
-                        max_value=1.0,
-                        value=0.5,
-                        step=0.01,
-                        help="Temporary manual value until hardware is connected.",
-                    )
-                )
+
+                # Keep model inputs reasonable if we don't have manual hardware data.
+                heart_rate_bpm = 90.0
+                if avg_stress is not None:
+                    # If you store 0–10 in DB, normalize it; otherwise keep 0–1.
+                    s = float(avg_stress)
+                    stress_level = max(0.0, min(1.0, s / 10.0 if s > 1.0 else s))
+                else:
+                    stress_level = 0.5
 
             label, recs = predict_with_recommendations(
                 logical=float(ds.get("logical", 0.0)),
