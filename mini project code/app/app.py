@@ -6,6 +6,7 @@ from supabase_db import (
     clear_questions_table,
     ensure_schema,
     fetch_health_summary_and_clear,
+    fetch_stress_related_questions,
     get_history,
     insert_question_timing,
     save_submission as _save_submission,
@@ -1910,6 +1911,14 @@ def apply_theme():
 
 def save_submission(username):
     submitted_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    # Execute the query BEFORE clearing health_data and questions
+    # select distinct(qid) from questions q,health_data h 
+    # where h.stress_level in ('HIGH','Moderate') and h.created_at between q.st_time and q.en_time;
+    hsqsns = fetch_stress_related_questions()
+    st.session_state.hsqsns = hsqsns  # Store in list for display
+    
+    # Now fetch health summary and clear both tables
     health_summary = fetch_health_summary_and_clear()
     st.session_state.health_summary = health_summary
     # As requested: clear `questions` at submit time too (same time as `health_data` is cleared above).
@@ -3301,6 +3310,20 @@ def render_exam_page(username):
         m2.metric("Questions Answered", st.session_state.attempted_questions)
         m3.metric("Time Taken", format_duration(st.session_state.time_taken_seconds))
         m4.metric("Tab Switch Violations", st.session_state.tab_switch_violations)
+
+        # Display stress metrics and hsqsns on submission
+        hs = st.session_state.get("health_summary") or {}
+        hsqsns = st.session_state.get("hsqsns", [])
+        
+        st.markdown("#### Stress Metrics")
+        s1, s2, s3, s4 = st.columns(4)
+        s1.metric("Avg Stress", f"{float(hs.get('avg_stress')):.2f}" if hs.get("avg_stress") is not None else "N/A")
+        s2.metric("Moderate/High Count", hs.get("moderate_high_count", 0))
+        s3.metric("Total Health Samples", hs.get("row_count", 0))
+        s4.metric("Questions During Stress (hsqsns)", len(hsqsns))
+        
+        if hsqsns:
+            st.caption(f"Stress-related question IDs (hsqsns): {hsqsns}")
 
         ds = st.session_state.domain_scores or {}
         is_foundation = st.session_state.get("current_test_type") == "foundation"

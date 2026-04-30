@@ -152,6 +152,60 @@ def clear_questions_table() -> bool:
             return False
 
 
+def fetch_stress_related_questions() -> List[str]:
+    """
+    Executes: select distinct(qid) from questions q,health_data h 
+    where h.stress_level in ('HIGH','Moderate') and h.created_at between q.st_time and q.en_time;
+    
+    Returns list of distinct question IDs (hsqsns) that were active during HIGH/Moderate stress periods.
+    """
+    qids: List[str] = []
+    
+    try:
+        sb = _client()
+    except MissingSupabaseCredentials:
+        return qids
+
+    # Fetch all questions and health_data to perform the join locally
+    # (Supabase client doesn't support direct SQL joins, so we fetch and filter)
+    try:
+        questions_res = sb.table("questions").select("qid,st_time,en_time").execute()
+        questions_data = getattr(questions_res, "data", None) or []
+    except Exception:
+        questions_data = []
+
+    try:
+        health_res = sb.table("health_data").select("stress_level,created_at").execute()
+        health_data = getattr(health_res, "data", None) or []
+    except Exception:
+        health_data = []
+
+    # Filter health_data for HIGH and Moderate stress levels
+    stress_health = [
+        h for h in health_data 
+        if str(h.get("stress_level") or "").strip().upper() in ("HIGH", "MODERATE")
+    ]
+
+    # For each question, check if any stress health record falls within its time range
+    for q in questions_data:
+        qid = q.get("qid")
+        st_time = q.get("st_time")
+        en_time = q.get("en_time")
+        
+        if not all([qid, st_time, en_time]):
+            continue
+        
+        # Check if any stress health record's created_at falls between st_time and en_time
+        for h in stress_health:
+            created_at = h.get("created_at")
+            if created_at and st_time <= created_at <= en_time:
+                if qid not in qids:
+                    qids.append(qid)
+                break
+
+    return qids
+
+
 def insert_question_timing(qid: str, st_time: str, en_time: str) -> bool:
     """
     Inserts one question timing row into Supabase table `questions`.
@@ -250,18 +304,24 @@ def save_submission(
         sb = _client()
     except MissingSupabaseCredentials:
         return False
+    # Build insert data - only include stress if it has a valid value
+    insert_data = {
+        "username": username,
+        "score": float(score),
+        "time_taken_seconds": int(time_taken_seconds),
+        "date": submitted_at,
+        "type": test_type,
+    }
+    # Only add stress if it's a non-None, non-empty, non-zero value
+    if stress is not None and str(stress).strip() not in ("", "None", "null"):
+        try:
+            insert_data["stress"] = float(stress)
+        except (ValueError, TypeError):
+            pass  # Skip invalid stress values
+
     res = (
         sb.table("test_history")
-        .insert(
-            {
-                "username": username,
-                "score": float(score),
-                "time_taken_seconds": int(time_taken_seconds),
-                "date": submitted_at,
-                "type": test_type,
-                **({"stress": float(stress)} if stress is not None else {}),
-            }
-        )
+        .insert(insert_data)
         .execute()
     )
     return bool(getattr(res, "data", None))
