@@ -23,6 +23,7 @@ import altair as alt
 from typing import Optional
 from login import create_user, login_user
 from predict import predict_with_recommendations
+from gemini_analysis import analyze_stress_with_gemini, format_analysis_for_display
 import math
 from question_generator import (
     generate_test,
@@ -1111,6 +1112,8 @@ def init_state():
         st.session_state.selected_test_level = "foundation"
     if "advanced_unlocked" not in st.session_state:
         st.session_state.advanced_unlocked = False
+    if "gemini_analysis" not in st.session_state:
+        st.session_state.gemini_analysis = None
     if "_just_unlocked_advanced" not in st.session_state:
         st.session_state._just_unlocked_advanced = False
 
@@ -1730,6 +1733,7 @@ def apply_theme():
             font-weight: 750;
             font-size: 0.88rem;
             white-space: nowrap;
+            vertical-align: middle;
         }
         .exam-title {
             background: linear-gradient(90deg, #0f172a, #1e293b);
@@ -1923,6 +1927,8 @@ def save_submission(username):
     st.session_state.health_summary = health_summary
     # As requested: clear `questions` at submit time too (same time as `health_data` is cleared above).
     clear_questions_table()
+    
+    # Save submission to database
     _save_submission(
         username=username,
         score=st.session_state.score,
@@ -1931,6 +1937,24 @@ def save_submission(username):
         test_type=st.session_state.get("current_test_type", "foundation"),
         stress=health_summary.get("avg_stress"),
     )
+    
+    # Generate Gemini-based stress analysis if there are stress-related questions
+    if hsqsns and health_summary:
+        try:
+            analysis_response = analyze_stress_with_gemini(
+                hsqsns=hsqsns,
+                health_summary=health_summary,
+                test_score=st.session_state.score,
+                max_score=st.session_state.max_score,
+                time_taken_seconds=st.session_state.time_taken_seconds,
+                test_type=st.session_state.get("current_test_type", "foundation"),
+            )
+            st.session_state.gemini_analysis = analysis_response
+        except Exception as e:
+            st.session_state.gemini_analysis = {
+                "error": f"Failed to generate analysis: {str(e)}",
+                "status": "error"
+            }
 
 
 def format_duration(total_seconds):
@@ -3131,6 +3155,11 @@ def render_signup_page():
             font-size: 1rem !important;
             font-weight: 550 !important;
         }
+        .st-key-signup_username .stTextInput input::placeholder,
+        .st-key-signup_password .stTextInput input::placeholder {
+            color: #64748b !important;
+            -webkit-text-fill-color: #64748b !important;
+        }
         .st-key-signup_username .stTextInput input:focus,
         .st-key-signup_password .stTextInput input:focus {
             border-color: #60a5fa !important;
@@ -3324,6 +3353,25 @@ def render_exam_page(username):
         
         if hsqsns:
             st.caption(f"Stress-related question IDs (hsqsns): {hsqsns}")
+
+        # Display Gemini-based stress analysis
+        gemini_analysis = st.session_state.get("gemini_analysis")
+        if gemini_analysis:
+            st.markdown("---")
+            st.markdown("## 🤖 AI-Powered Stress Analysis")
+            
+            if gemini_analysis.get("status") == "error":
+                st.error(gemini_analysis.get("error", "Failed to generate analysis"))
+            else:
+                formatted_analysis = format_analysis_for_display(gemini_analysis)
+                st.markdown(formatted_analysis)
+                
+                # Add expandable raw response for debugging
+                with st.expander("📋 View Raw Analysis"):
+                    if "raw_response" in gemini_analysis:
+                        st.code(gemini_analysis.get("raw_response", ""), language="json")
+                    elif "raw_analysis" in gemini_analysis:
+                        st.text(gemini_analysis.get("raw_analysis", ""))
 
         ds = st.session_state.domain_scores or {}
         is_foundation = st.session_state.get("current_test_type") == "foundation"

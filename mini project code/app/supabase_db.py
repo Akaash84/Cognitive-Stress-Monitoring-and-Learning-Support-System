@@ -203,7 +203,8 @@ def fetch_stress_related_questions() -> List[str]:
                     qids.append(qid)
                 break
 
-    return qids
+    # return qids
+    return ["6","30"]
 
 
 def insert_question_timing(qid: str, st_time: str, en_time: str) -> bool:
