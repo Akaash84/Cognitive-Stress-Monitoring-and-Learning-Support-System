@@ -1,3 +1,25 @@
+# Groq AI Integration Guide (migrated from Gemini)
+
+This project now uses Groq for AI analysis. Replace references to Gemini with Groq.
+
+1. Set your API key: 
+
+PowerShell (temporary for session):
+```
+$env:GROQ_API_KEY="your-groq-api-key-here"
+```
+
+PowerShell (permanent for user):
+```
+[Environment]::SetEnvironmentVariable('GROQ_API_KEY','your-groq-api-key-here','User')
+```
+
+2. By default the code uses `GROQ_API_URL` and `GROQ_MODEL` env vars if you need to override endpoint/model.
+
+3. The main integration file is `app/gemini_analysis.py` (preserved function names) which now uses `app/groq_client.py` internally.
+
+4. For testing: run `python .\app\test.py` after setting the environment variable.
+
 # Gemini AI Stress Analysis Integration
 
 ## Overview

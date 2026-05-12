@@ -94,6 +94,8 @@ def fetch_health_summary_and_clear() -> Dict[str, Any]:
         "avg_stress": None,
         "moderate_high_count": 0,
         "row_count": 0,
+        "overall_stress_prediction": None,
+        "overall_stress_count": 0,
     }
 
     try:
@@ -108,8 +110,11 @@ def fetch_health_summary_and_clear() -> Dict[str, Any]:
     except Exception:
         rows = []
 
+    from collections import Counter
     stresses: List[float] = []
     mh_count = 0
+    level_counts = Counter()
+
     for r in rows:
         stress = r.get("stress")
         if stress is not None:
@@ -118,13 +123,20 @@ def fetch_health_summary_and_clear() -> Dict[str, Any]:
             except (TypeError, ValueError):
                 pass
 
-        lvl = str(r.get("stress_level") or "").strip().lower()
-        if lvl in {"moderate", "high"}:
+        lvl = str(r.get("stress_level") or "").strip().upper()
+        if lvl in {"MODERATE", "HIGH"}:
             mh_count += 1
+            level_counts[lvl] += 1
 
     summary["row_count"] = len(rows)
     summary["moderate_high_count"] = mh_count
     summary["avg_stress"] = (sum(stresses) / len(stresses)) if stresses else None
+
+    # Determine overall stress prediction (most frequent between MODERATE and HIGH)
+    if level_counts:
+        top_level, top_count = level_counts.most_common(1)[0]
+        summary["overall_stress_prediction"] = top_level
+        summary["overall_stress_count"] = int(top_count)
 
     clear_health_data()
     return summary
@@ -203,8 +215,8 @@ def fetch_stress_related_questions() -> List[str]:
                     qids.append(qid)
                 break
 
-    # return qids
-    return ["6","30"]
+    return qids
+    # return ["6","30"]
 
 
 def insert_question_timing(qid: str, st_time: str, en_time: str) -> bool:
