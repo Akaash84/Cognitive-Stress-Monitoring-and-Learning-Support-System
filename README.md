@@ -1,22 +1,17 @@
-::: {align="center"}
-# 🧠 Cognitive Stress Monitoring & Learning Support System
+# Cognitive Stress Monitoring & Learning Support System
 
 ### An adaptive cognitive assessment and learning-support platform for evaluating cognitive performance, tracking progress, and supporting stress-aware learning.
 
-```{=html}
 <p>
 ```
-`<img src="screenshots/cognitive-assessment-system-pages-updated/home-page.png" alt="Cognitive Assessment System" width="1000">`{=html}
-```{=html}
-</p>
+`![Cognitive Assessment System](screenshots/cognitive-assessment-system-pages-updated/home-page.png)`
 ```
 **Timed Assessment • Performance Tracking • Stress Monitoring • Learning
 Support**
-:::
 
-------------------------------------------------------------------------
+---
 
-## 🎯 Project Overview
+## Project Overview
 
 The **Cognitive Stress Monitoring & Learning Support System** is a
 software platform that provides a structured, exam-style environment for
@@ -31,22 +26,20 @@ The software is also connected to a broader research concept for an
 learning optimization**. The associated patent describes physiological
 sensing, short cognitive interactions, individualized baselines, trend
 analysis, adaptive thresholds, and closed-loop feedback.
-citeturn14file0
 
 > **Scope:** This repository documents the implemented software
 > assessment/data workflow. The patent describes the broader embedded
 > hardware architecture; not every patented hardware component is
 > claimed as implemented in this Streamlit application.
 
-------------------------------------------------------------------------
+---
 
-## 💡 Why This Project Matters
+## Why This Project Matters
 
 Conventional examinations primarily measure learning outcomes after an
 activity. The broader research concept addresses the need to observe
 cognitive stress and workload during active study, detect deviations
 from an individual's normal baseline, and provide timely support.
-citeturn14file0
 
 This project therefore combines:
 
@@ -57,11 +50,11 @@ This project therefore combines:
 -   learning resources
 -   personalized learning direction
 
-------------------------------------------------------------------------
+---
 
-# ✨ Key Features
+# Key Features
 
-## 1. 📝 Timed Cognitive Assessment
+## 1. Timed Cognitive Assessment
 
 -   45-question assessment workflow
 -   25-minute timed examination
@@ -73,7 +66,7 @@ This project therefore combines:
 -   Final-question submission
 -   Automatic submission support
 
-## 2. 📊 Performance Tracking
+## 2. Performance Tracking
 
 Assessment history can record:
 
@@ -85,14 +78,13 @@ Assessment history can record:
 
 This supports comparison across repeated attempts.
 
-## 3. 🧠 Stress & Physiological Data
+## 3. Stress & Physiological Data
 
 The software data layer supports stress/physiological records. The
 broader embedded concept uses heart rate, temperature, reaction time,
 attention consistency, baseline learning, and temporal trend analysis.
-citeturn14file0
 
-## 4. 📚 Learning Resources
+## 4. Learning Resources
 
 The Resources page provides structured preparation across:
 
@@ -104,7 +96,7 @@ The Resources page provides structured preparation across:
 It also provides study tracks, practice actions, downloadable material,
 and improvement targets.
 
-## 5. 🔐 User Authentication
+## 5. User Authentication
 
 -   Sign-up
 -   Login
@@ -113,7 +105,7 @@ and improvement targets.
 -   Supabase-backed authentication
 -   Password hashing
 
-## 6. ☁️ Supabase Backend
+## 6. Supabase Backend
 
 The application uses Supabase for data storage across areas including:
 
@@ -125,26 +117,24 @@ The application uses Supabase for data storage across areas including:
 Secrets and local authentication/database files are excluded from the
 public repository.
 
-------------------------------------------------------------------------
+---
 
-# 🖥️ Main Application Pages
+# Main Application Pages
 
-  Page                 Purpose
-  -------------------- ----------------------------------------
-  **Home**             Introduces the assessment platform
-  **Signup**           Creates a user account
-  **Login**            Authenticates users
-  **Dashboard**        Selects assessment mode and level
-  **Assessment**       Runs the timed test
-  **Question View**    Displays questions and options
-  **Final Question**   Provides final submission workflow
-  **Resources**        Provides learning and practice support
+| Page | Purpose |
+|---|---|
+| **Home** | Introduces the assessment platform |
+| **Signup** | Creates a user account |
+| **Login** | Authenticates users |
+| **Dashboard** | Selects assessment mode and level |
+| **Assessment** | Runs the timed test |
+| **Question View** | Displays questions and options |
+| **Final Question** | Provides final submission workflow |
+| **Resources** | Provides learning and practice support |
 
-------------------------------------------------------------------------
+# Application Workflow
 
-# 🔄 Application Workflow
-
-``` mermaid
+```mermaid
 flowchart TD
     U[User] --> H[Home]
     H --> A{Authentication}
@@ -170,11 +160,11 @@ flowchart TD
     C --> LR[Learning Resources]
 ```
 
-------------------------------------------------------------------------
+---
 
-# 🏗️ System Architecture
+# System Architecture
 
-``` mermaid
+```mermaid
 flowchart TB
     USER[User]
 
@@ -216,37 +206,11 @@ flowchart TB
     HISTORY --> RES
 ```
 
-------------------------------------------------------------------------
+---
 
-# 🔬 Adaptive Cognitive Stress Monitoring Concept
+# Supabase Data Architecture
 
-The associated patent describes a desk-mounted embedded unit containing
-physiological sensors, an interaction module, an embedded controller,
-signal processing, cognitive analysis, personalized baseline learning,
-trend analysis, and adaptive feedback. citeturn14file0
-
-``` mermaid
-flowchart LR
-    S[Sensors] --> P[Signal Processing]
-    I[Interaction Test] --> P
-    P --> C[Cognitive Analysis]
-    C --> B[Personalized Baseline]
-    B --> T[Trend Analysis]
-    T --> A[Adaptive Threshold]
-    A --> F[Visual / Audio Feedback]
-    F --> R[Recovery Verification]
-    R --> B
-```
-
-The patent identifies heart-rate and temperature sensing, push-button
-cognitive interaction, an ESP32-type controller, LED indicators, and
-buzzer feedback as parts of the broader architecture. citeturn14file0
-
-------------------------------------------------------------------------
-
-# 🗄️ Supabase Data Architecture
-
-``` mermaid
+```mermaid
 erDiagram
     USERS ||--o{ TEST_HISTORY : has
 
@@ -254,14 +218,10 @@ erDiagram
         int id
         string username
         string password_hash
-    }
-
     QUESTIONS {
         int qid
         datetime st_time
         datetime en_time
-    }
-
     HEALTH_DATA {
         int id
         string user
@@ -269,8 +229,6 @@ erDiagram
         float temperature
         float stress
         datetime timestamp
-    }
-
     TEST_HISTORY {
         int id
         string username
@@ -279,100 +237,45 @@ erDiagram
         date date
         string type
         float stress
-    }
 ```
 
 > The exact deployed columns can vary with the current Supabase schema.
 
-------------------------------------------------------------------------
+---
 
-# 📸 Application Screenshots
+# Application Screenshots
 
 ## 🏠 Home Page
 
-```{=html}
-<p align="center">
-```
-`<img src="screenshots/cognitive-assessment-system-pages-updated/home-page.png" alt="Home Page" width="1000">`{=html}
-```{=html}
-</p>
-```
-## 🔐 Login Page
+![Home Page](screenshots/cognitive-assessment-system-pages-updated/home-page.png)
+## Login Page
 
-```{=html}
-<p align="center">
-```
-`<img src="screenshots/cognitive-assessment-system-pages-updated/login-page.png" alt="Login Page" width="1000">`{=html}
-```{=html}
-</p>
-```
-## 📝 Signup Page
+![Login Page](screenshots/cognitive-assessment-system-pages-updated/login-page.png)
+## Signup Page
 
-```{=html}
-<p align="center">
-```
-`<img src="screenshots/cognitive-assessment-system-pages-updated/signup-page.png" alt="Signup Page" width="1000">`{=html}
-```{=html}
-</p>
-```
-## 📊 Candidate Dashboard
+![Signup Page](screenshots/cognitive-assessment-system-pages-updated/signup-page.png)
+## Candidate Dashboard
 
-```{=html}
-<p align="center">
-```
-`<img src="screenshots/cognitive-assessment-system-pages-updated/dashboard-page.png" alt="Dashboard" width="1000">`{=html}
-```{=html}
-</p>
-```
-## 🎯 Assessment Level Selection
+![Dashboard](screenshots/cognitive-assessment-system-pages-updated/dashboard-page.png)
+## Assessment Level Selection
 
-```{=html}
-<p align="center">
-```
-`<img src="screenshots/cognitive-assessment-system-pages-updated/dashboard-test-selection-page.png" alt="Assessment Level Selection" width="1000">`{=html}
-```{=html}
-</p>
-```
-## ⏱️ Assessment Interface
+![Assessment Level Selection](screenshots/cognitive-assessment-system-pages-updated/dashboard-test-selection-page.png)
+## Assessment Interface
 
-```{=html}
-<p align="center">
-```
-`<img src="screenshots/cognitive-assessment-system-pages-updated/assessment-page.png" alt="Assessment Interface" width="1000">`{=html}
-```{=html}
-</p>
-```
-## ❓ Assessment Question
+![Assessment Interface](screenshots/cognitive-assessment-system-pages-updated/assessment-page.png)
+## Assessment Question
 
-```{=html}
-<p align="center">
-```
-`<img src="screenshots/cognitive-assessment-system-pages-updated/assessment-question-page.png" alt="Assessment Question" width="1000">`{=html}
-```{=html}
-</p>
-```
-## 🏁 Final Question
+![Assessment Question](screenshots/cognitive-assessment-system-pages-updated/assessment-question-page.png)
+## Final Question
 
-```{=html}
-<p align="center">
-```
-`<img src="screenshots/cognitive-assessment-system-pages-updated/assessment-final-question-page.png" alt="Final Question" width="1000">`{=html}
-```{=html}
-</p>
-```
-## 📚 Learning Resources
+![Final Question](screenshots/cognitive-assessment-system-pages-updated/assessment-final-question-page.png)
+## Learning Resources
 
-```{=html}
-<p align="center">
-```
-`<img src="screenshots/cognitive-assessment-system-pages-updated/resources-page.png" alt="Resources" width="1000">`{=html}
-```{=html}
-</p>
-```
+![Resources](screenshots/cognitive-assessment-system-pages-updated/resources-page.png)
 
-------------------------------------------------------------------------
+---
 
-# 🧠 Cognitive Assessment Domains
+# Cognitive Assessment Domains
 
 ### Logical Reasoning
 
@@ -392,62 +295,49 @@ Vocabulary, sentence arrangement, comprehension, and grammar correction.
 Number recall, word recall, image sequences, and concentration
 exercises.
 
-------------------------------------------------------------------------
+---
 
-# 📈 Assessment-to-Learning Cycle
+# Assessment-to-Learning Cycle
 
 ``` text
 Assessment
-    ↓
 Score & Time Analysis
-    ↓
 Performance History
-    ↓
 Identify Improvement Areas
-    ↓
 Learning Resources
-    ↓
 Practice
-    ↓
 Next Assessment
 ```
 
-------------------------------------------------------------------------
+---
 
-# 🛠️ Technology Stack
+# Technology Stack
 
-  Technology                    Purpose
-  ----------------------------- -------------------
-  **Python**                    Application logic
-  **Streamlit**                 Web interface
-  **Supabase**                  Backend database
-  **Passlib / PBKDF2-SHA256**   Password hashing
-  **HTML / CSS**                UI styling
-  **Git / GitHub**              Version control
+| Technology | Purpose |
+|---|---|
+| **Python** | Application logic |
+| **Streamlit** | Web interface |
+| **Supabase** | Backend database |
+| **Passlib / PBKDF2-SHA256** | Password hashing |
+| **HTML / CSS** | UI styling |
+| **Git / GitHub** | Version control |
 
-------------------------------------------------------------------------
-
-# 📁 Project Structure
+# Project Structure
 
 ``` text
 Cognitive-Stress-Monitoring-Learning-Support-System/
-│
 ├── .gitignore
 ├── README.md
-│
 ├── mini project code/
 │   ├── app/
 │   │   ├── app.py
 │   │   ├── login.py
 │   │   └── supabase_db.py
-│   │
 │   ├── database/
 │   │   └── database.py
 │   └── ...
-│
 ├── docs/
 │   └── ARCHITECTURE.md
-│
 └── screenshots/
     └── cognitive-assessment-system-pages-updated/
         ├── home-page.png
@@ -461,9 +351,9 @@ Cognitive-Stress-Monitoring-Learning-Support-System/
         └── resources-page.png
 ```
 
-------------------------------------------------------------------------
+---
 
-# ⚙️ Installation & Setup
+# Installation & Setup
 
 ## 1. Clone
 
@@ -507,9 +397,9 @@ SUPABASE_SERVICE_ROLE_KEY = "your-service-role-key"
 
 **Never commit real credentials to GitHub.**
 
-------------------------------------------------------------------------
+---
 
-# ▶️ Run the Application
+# Run the Application
 
 From the application directory:
 
@@ -519,9 +409,9 @@ streamlit run app.py
 
 Open the local URL displayed by Streamlit.
 
-------------------------------------------------------------------------
+---
 
-# 🔐 Security
+# Security
 
 The repository follows these practices:
 
@@ -535,9 +425,9 @@ The repository follows these practices:
 For production deployment, review Supabase Row Level Security,
 authorization, secret management, and database access policies.
 
-------------------------------------------------------------------------
+---
 
-# 🔬 Patent & Research Context
+# Patent & Research Context
 
 **Title:** Adaptive Embedded System for Real-Time Cognitive Stress
 Monitoring and Learning Optimization
@@ -561,11 +451,10 @@ Engineering and Technology (VNRVJIET)
 6.  Mahendra Architha
 
 These details are taken from the associated Indian patent publication.
-citeturn14file0
 
-------------------------------------------------------------------------
+---
 
-# 🔮 Future Scope
+# Future Scope
 
 -   ESP32-based physiological sensing
 -   real-time heart-rate monitoring
@@ -581,9 +470,9 @@ These details are taken from the associated Indian patent publication.
 -   cloud deployment
 -   automated testing and CI/CD
 
-------------------------------------------------------------------------
+---
 
-# ⚠️ Privacy & Responsible Use
+# Privacy & Responsible Use
 
 This project is intended for educational, research, and demonstration
 purposes.
@@ -592,9 +481,9 @@ Physiological and cognitive information should be collected with
 appropriate consent and protected using suitable access controls. The
 system should not be treated as a medical diagnostic or treatment tool.
 
-------------------------------------------------------------------------
+---
 
-# 📚 Documentation
+# Documentation
 
 Additional documentation is available in:
 
@@ -604,30 +493,20 @@ Additional documentation is available in:
 The associated patent document provides the authoritative
 patent-specific description of the broader embedded-system invention.
 
-------------------------------------------------------------------------
+---
 
-# 👥 Contributors
+# Project Contributor
 
-The associated patent publication lists:
+**Manda Akaash**
 
--   Karnam Akhil
--   Dr. S. Nagini
--   Manda Akaash
--   Malladi Sri Raksha
--   Malapati Pavan
--   Mahendra Architha
+Software development, application implementation, integration, documentation, and repository maintenance.
 
-**Applicant:** Vallurupalli Nageswara Rao Vignana Jyothi Institute of
-Engineering and Technology.
-
-------------------------------------------------------------------------
+---
 
 # 📄 License
 
 See the repository `LICENSE` file for the applicable terms.
 
-------------------------------------------------------------------------
+---
 
-::: {align="center"}
-### 🧠 Assess • Analyze • Learn • Improve
-:::
+### Assess • Analyze • Learn • Improve
