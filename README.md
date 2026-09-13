@@ -1,968 +1,633 @@
-<div align="center">
+::: {align="center"}
+# 🧠 Cognitive Stress Monitoring & Learning Support System
 
-🧠 Cognitive Stress Monitoring & Learning Support System
+### An adaptive cognitive assessment and learning-support platform for evaluating cognitive performance, tracking progress, and supporting stress-aware learning.
 
-An adaptive cognitive assessment and learning-support platform that combines timed cognitive testing, performance tracking, physiological stress data, and personalized learning insights.
+```{=html}
+<p>
+```
+`<img src="screenshots/cognitive-assessment-system-pages-updated/home-page.png" alt="Cognitive Assessment System" width="1000">`{=html}
+```{=html}
+</p>
+```
+**Timed Assessment • Performance Tracking • Stress Monitoring • Learning
+Support**
+:::
 
+------------------------------------------------------------------------
 
+## 🎯 Project Overview
 
+The **Cognitive Stress Monitoring & Learning Support System** is a
+software platform that provides a structured, exam-style environment for
+cognitive assessment and learning support.
 
+Users can create an account, log in, select an assessment mode and
+level, complete a timed 45-question assessment, navigate through
+questions, submit the test, and maintain performance history.
 
+The software is also connected to a broader research concept for an
+**adaptive embedded system for real-time cognitive stress monitoring and
+learning optimization**. The associated patent describes physiological
+sensing, short cognitive interactions, individualized baselines, trend
+analysis, adaptive thresholds, and closed-loop feedback.
+citeturn14file0
 
-Cognitive Assessment • Stress-Aware Analysis • Learning Support • Longitudinal Tracking
+> **Scope:** This repository documents the implemented software
+> assessment/data workflow. The patent describes the broader embedded
+> hardware architecture; not every patented hardware component is
+> claimed as implemented in this Streamlit application.
 
-</div>
+------------------------------------------------------------------------
 
-📌 Overview
+## 💡 Why This Project Matters
 
-The Cognitive Stress Monitoring & Learning Support System is a student-focused platform designed to bring cognitive assessment, performance analytics, physiological stress information, and learning support into one workflow.
+Conventional examinations primarily measure learning outcomes after an
+activity. The broader research concept addresses the need to observe
+cognitive stress and workload during active study, detect deviations
+from an individual's normal baseline, and provide timely support.
+citeturn14file0
 
-The software provides a structured examination environment with Exam and Practice modes, Foundation and Advanced levels, timed questions, question navigation, automatic submission, performance history, and domain-focused learning resources.
+This project therefore combines:
 
-The broader research direction extends this software workflow toward an adaptive embedded system that can combine physiological signals such as heart rate / HRV and temperature with short cognitive interaction tests. The accompanying patent specification describes individualized baselines, temporal trend analysis, adaptive thresholds, and closed-loop visual/audio feedback for cognitive overload and recovery.
+-   structured cognitive testing
+-   timed exam interaction
+-   performance and attempt history
+-   physiological/stress data handling
+-   learning resources
+-   personalized learning direction
 
-Important: The web application and the embedded-system concept are related parts of the overall project. The patent describes the broader hardware architecture; the current public software repository documents the implemented assessment, data, and learning-support workflow.
+------------------------------------------------------------------------
 
-🎯 Problem Statement
+# ✨ Key Features
 
-Traditional online assessments usually focus on the final score. They may not capture enough information about:
+## 1. 📝 Timed Cognitive Assessment
 
-response speed and time spent on questions
+-   45-question assessment workflow
+-   25-minute timed examination
+-   Exam and Practice modes
+-   Foundation and Advanced attempts
+-   Previous / Next navigation
+-   Question palette
+-   Answered / unanswered / unvisited states
+-   Final-question submission
+-   Automatic submission support
 
-performance patterns across repeated attempts
+## 2. 📊 Performance Tracking
 
-which cognitive domains need additional practice
+Assessment history can record:
 
-changes in performance during a test
+-   score
+-   completion time
+-   assessment date
+-   assessment type
+-   stress-related information when available
 
-relationships between physiological signals and cognitive workload
+This supports comparison across repeated attempts.
+
+## 3. 🧠 Stress & Physiological Data
 
-stress-related patterns that occur during specific questions
-
-This project addresses that gap by bringing assessment + timing + historical performance + optional physiological information + learning resources into a unified system.
-
-✨ Key Features
-
-Feature
-
-Description
-
-🔐 Supabase Authentication
-
-Username/password signup and login with PBKDF2-SHA256 password hashing
-
-🧪 Exam Mode
-
-Controlled, timed assessment workflow
-
-📝 Practice Mode
-
-Practice-oriented assessment workflow
-
-🎯 Foundation & Advanced
-
-Two assessment levels
-
-⏱️ Timed Testing
-
-Countdown timer, progress tracking, and automatic submission
-
-🧭 Question Palette
-
-Direct navigation and visual question status
-
-🖼️ Image-Based Questions
-
-Supports visual and multiple-choice cognitive questions
-
-📊 Performance History
-
-Stores score, duration, date, assessment type, and optional stress information
-
-🧠 Cognitive Domains
-
-Logical reasoning, quantitative aptitude, verbal ability, and memory/focus
-
-❤️ Physiological Data
-
-Supports heart-rate, temperature, and stress-related records through the backend workflow
-
-🔎 Stress-to-Question Mapping
-
-Uses question timestamps and health-data timestamps to identify questions associated with elevated stress
-
-📚 Learning Resources
-
-Domain material, practice sheets, mock tests, and downloadable resources
-
-🔄 Longitudinal Tracking
-
-Enables comparison of assessment attempts over time
-
-🛡️ Secrets Protection
-
-Credentials are loaded from environment variables or Streamlit secrets and are excluded from version control
-
-🧠 Cognitive Assessment Domains
-
-The learning and assessment workflow is organized around four practical areas:
-
-Domain
-
-Example Areas
-
-Logical Reasoning
-
-Series, coding-decoding, blood relations, statements and conclusions
-
-Quantitative Aptitude
-
-Percentages, ratios, averages, speed/math, data interpretation
-
-Verbal Ability
-
-Vocabulary, sentence arrangement, comprehension, grammar
-
-Memory & Focus
-
-Number recall, word recall, image sequences, concentration exercises
-
-🔄 Application Workflow
-
-                    ┌──────────────────────┐
-                    │        USER          │
-                    └──────────┬───────────┘
-                               │
-                               ▼
-                    ┌──────────────────────┐
-                    │ Authentication       │
-                    │ Signup / Login       │
-                    └──────────┬───────────┘
-                               │
-                               ▼
-                    ┌──────────────────────┐
-                    │ Candidate Dashboard  │
-                    └──────────┬───────────┘
-                               │
-                    ┌──────────┴───────────┐
-                    ▼                      ▼
-              ┌───────────┐          ┌───────────┐
-              │   Exam    │          │  Practice │
-              └─────┬─────┘          └─────┬─────┘
-                    └──────────┬───────────┘
-                               ▼
-                    ┌──────────────────────┐
-                    │ Foundation / Advanced│
-                    └──────────┬───────────┘
-                               │
-                               ▼
-                    ┌──────────────────────┐
-                    │ Timed Assessment     │
-                    │ Questions + Timer    │
-                    │ Palette + Navigation │
-                    └──────────┬───────────┘
-                               │
-                  ┌────────────┴────────────┐
-                  ▼                         ▼
-          ┌──────────────┐          ┌──────────────┐
-          │ Manual Submit│          │ Auto Submit  │
-          └──────┬───────┘          └──────┬───────┘
-                 └──────────────┬───────────┘
-                                ▼
-                    ┌──────────────────────┐
-                    │ Score & Performance  │
-                    └──────────┬───────────┘
-                               │
-                               ▼
-                    ┌──────────────────────┐
-                    │ Supabase History     │
-                    │ + Stress Information │
-                    └──────────┬───────────┘
-                               │
-                               ▼
-                    ┌──────────────────────┐
-                    │ Learning Resources & │
-                    │ Improvement Support  │
-                    └──────────────────────┘
-
-The current assessment screenshots demonstrate a 45-question, 25-minute assessment interface.
-
-🏗️ System Architecture
-
-Software Layer
-
-┌──────────────────────────────────────────────────────────┐
-│                    Streamlit Web App                     │
-├──────────────────────────────────────────────────────────┤
-│ Authentication │ Dashboard │ Assessment │ Resources     │
-├──────────────────────────────────────────────────────────┤
-│ Question Generation │ Scoring │ Timing │ History        │
-├──────────────────────────────────────────────────────────┤
-│ Stress Analysis │ Recommendations │ Performance Logic   │
-├──────────────────────────────────────────────────────────┤
-│                    Supabase Backend                      │
-│ users │ questions │ health_data │ test_history          │
-└──────────────────────────────────────────────────────────┘
-
-Embedded-System Research Layer
-
-The accompanying patent specification describes a desk-mounted cognitive monitoring architecture:
-
-Heart Rate / HRV ─┐
-                  ├──► Signal Processing
-Temperature ──────┤
-                  │
-Push Button ──────┘
-                        │
-                        ▼
-                 Cognitive Analysis
-                        │
-                        ▼
-                 Baseline Learning
-                        │
-                        ▼
-                  Trend Analysis
-                        │
-                        ▼
-                 Adaptive Thresholds
-                        │
-                        ▼
-                Feedback / Intervention
-                    ┌───┴───┐
-                    ▼       ▼
-                   LED    Buzzer
-                    │       │
-                    └───┬───┘
-                        ▼
-                Recovery Verification
-                        │
-                        ▼
-                  Updated Baseline
-
-The patent specification describes this as a closed-loop, non-invasive, curriculum-independent approach for detecting cognitive overload and progressive cognitive decline during study sessions.
-
-🗄️ Supabase Data Model
-
-The current software uses Supabase as its persistent backend.
-
-users
-
-Stores application accounts.
-
-users
-├── id
-├── username
-├── password_hash
-└── created_at
-
-Passwords are stored as hashes rather than plaintext passwords.
-
-questions
-
-Stores question timing information used to associate questions with physiological records.
-
-questions
-├── qid
-├── st_time
-└── en_time
-
-health_data
-
-Stores physiological and stress-related records.
-
-health_data
-├── stress
-├── stress_level
-├── temperature
-├── heart_rate
-└── created_at
-
-test_history
-
-Stores assessment performance history.
-
-test_history
-├── username
-├── score
-├── time_taken_seconds
-├── date
-├── type
-└── stress (optional)
-
-Stress-to-Question Correlation
-
-Question start/end timestamps are compared with health-data timestamps. Questions occurring during HIGH or MODERATE stress periods can therefore be identified for further analysis and recommendation generation.
-
-🔐 Authentication & Security
-
-Authentication is Supabase-only in the current version.
-
-Password protection
-
-Passwords are hashed using PBKDF2-SHA256 through Passlib.
-
-Plaintext passwords are not stored in the database.
-
-No public default username/password is required.
-
-Configuration
-
-Supabase credentials are read from:
-
-environment variables, or
-
-Streamlit secrets
-
-Example:
-
-SUPABASE_URL = "your_supabase_url"
-SUPABASE_ANON_KEY = "your_supabase_anon_key"
-SUPABASE_SERVICE_ROLE_KEY = "your_service_role_key"
-
-Never commit real credentials or service-role keys.
-
-Do not commit:
-
-.env
-.streamlit/secrets.toml
-users.db
-.local_users.json
-API keys
-service-role keys
-
-🛠️ Technology Stack
-
-Layer
-
-Technology
-
-Language
-
-Python
-
-Web Framework
-
-Streamlit
-
-Database
-
-Supabase / PostgreSQL
-
-Authentication
-
-Passlib + PBKDF2-SHA256
-
-Data Processing
-
-Pandas / NumPy
-
-Machine Learning
-
-scikit-learn
-
-Model Persistence
-
-joblib
-
-Hardware Communication
-
-PySerial
-
-Embedded Controller Concept
-
-ESP32 / Arduino
-
-Physiological Inputs
-
-Heart Rate / HRV, Temperature
-
-Version Control
-
-Git / GitHub
-
-📁 Project Structure
-
-Cognitive-Stress-Monitoring-and-Learning-Support-System/
+The software data layer supports stress/physiological records. The
+broader embedded concept uses heart rate, temperature, reaction time,
+attention consistency, baseline learning, and temporal trend analysis.
+citeturn14file0
+
+## 4. 📚 Learning Resources
+
+The Resources page provides structured preparation across:
+
+-   Logical Reasoning
+-   Quantitative Aptitude
+-   Verbal Ability
+-   Memory & Focus
+
+It also provides study tracks, practice actions, downloadable material,
+and improvement targets.
+
+## 5. 🔐 User Authentication
+
+-   Sign-up
+-   Login
+-   Session-based user state
+-   User-specific assessment history
+-   Supabase-backed authentication
+-   Password hashing
+
+## 6. ☁️ Supabase Backend
+
+The application uses Supabase for data storage across areas including:
+
+-   `users`
+-   `questions`
+-   `health_data`
+-   `test_history`
+
+Secrets and local authentication/database files are excluded from the
+public repository.
+
+------------------------------------------------------------------------
+
+# 🖥️ Main Application Pages
+
+  Page                 Purpose
+  -------------------- ----------------------------------------
+  **Home**             Introduces the assessment platform
+  **Signup**           Creates a user account
+  **Login**            Authenticates users
+  **Dashboard**        Selects assessment mode and level
+  **Assessment**       Runs the timed test
+  **Question View**    Displays questions and options
+  **Final Question**   Provides final submission workflow
+  **Resources**        Provides learning and practice support
+
+------------------------------------------------------------------------
+
+# 🔄 Application Workflow
+
+``` mermaid
+flowchart TD
+    U[User] --> H[Home]
+    H --> A{Authentication}
+    A -->|New User| S[Signup]
+    A -->|Existing User| L[Login]
+    S --> L
+    L --> D[Candidate Dashboard]
+
+    D --> M{Select Mode}
+    M -->|Exam| T[Timed Assessment]
+    M -->|Practice| T
+
+    D --> F{Select Level}
+    F -->|Foundation| T
+    F -->|Advanced| T
+
+    T --> Q[Question Navigation]
+    Q --> P[Question Palette]
+    P --> Q
+    Q --> R[Submit / Auto Submit]
+    R --> C[Score & Time Calculation]
+    C --> HST[(test_history)]
+    C --> LR[Learning Resources]
+```
+
+------------------------------------------------------------------------
+
+# 🏗️ System Architecture
+
+``` mermaid
+flowchart TB
+    USER[User]
+
+    subgraph APP[Streamlit Application]
+        HOME[Home]
+        AUTH[Authentication]
+        DASH[Dashboard]
+        TEST[Assessment Engine]
+        RES[Resources]
+    end
+
+    subgraph LOGIC[Application Logic]
+        SCORE[Scoring & Timing]
+        QUEST[Question Management]
+        PERF[Performance Tracking]
+        STRESS[Stress Data Handling]
+    end
+
+    subgraph SUPA[Supabase]
+        USERS[(users)]
+        QUESTIONS[(questions)]
+        HEALTH[(health_data)]
+        HISTORY[(test_history)]
+    end
+
+    USER --> HOME
+    HOME --> AUTH
+    AUTH --> USERS
+    AUTH --> DASH
+    DASH --> TEST
+    DASH --> RES
+    TEST --> QUEST
+    QUEST --> QUESTIONS
+    TEST --> SCORE
+    SCORE --> PERF
+    PERF --> HISTORY
+    TEST --> STRESS
+    STRESS --> HEALTH
+    HISTORY --> RES
+```
+
+------------------------------------------------------------------------
+
+# 🔬 Adaptive Cognitive Stress Monitoring Concept
+
+The associated patent describes a desk-mounted embedded unit containing
+physiological sensors, an interaction module, an embedded controller,
+signal processing, cognitive analysis, personalized baseline learning,
+trend analysis, and adaptive feedback. citeturn14file0
+
+``` mermaid
+flowchart LR
+    S[Sensors] --> P[Signal Processing]
+    I[Interaction Test] --> P
+    P --> C[Cognitive Analysis]
+    C --> B[Personalized Baseline]
+    B --> T[Trend Analysis]
+    T --> A[Adaptive Threshold]
+    A --> F[Visual / Audio Feedback]
+    F --> R[Recovery Verification]
+    R --> B
+```
+
+The patent identifies heart-rate and temperature sensing, push-button
+cognitive interaction, an ESP32-type controller, LED indicators, and
+buzzer feedback as parts of the broader architecture. citeturn14file0
+
+------------------------------------------------------------------------
+
+# 🗄️ Supabase Data Architecture
+
+``` mermaid
+erDiagram
+    USERS ||--o{ TEST_HISTORY : has
+
+    USERS {
+        int id
+        string username
+        string password_hash
+    }
+
+    QUESTIONS {
+        int qid
+        datetime st_time
+        datetime en_time
+    }
+
+    HEALTH_DATA {
+        int id
+        string user
+        float heart_rate
+        float temperature
+        float stress
+        datetime timestamp
+    }
+
+    TEST_HISTORY {
+        int id
+        string username
+        int score
+        float time_taken_seconds
+        date date
+        string type
+        float stress
+    }
+```
+
+> The exact deployed columns can vary with the current Supabase schema.
+
+------------------------------------------------------------------------
+
+# 📸 Application Screenshots
+
+## 🏠 Home Page
+
+```{=html}
+<p align="center">
+```
+`<img src="screenshots/cognitive-assessment-system-pages-updated/home-page.png" alt="Home Page" width="1000">`{=html}
+```{=html}
+</p>
+```
+## 🔐 Login Page
+
+```{=html}
+<p align="center">
+```
+`<img src="screenshots/cognitive-assessment-system-pages-updated/login-page.png" alt="Login Page" width="1000">`{=html}
+```{=html}
+</p>
+```
+## 📝 Signup Page
+
+```{=html}
+<p align="center">
+```
+`<img src="screenshots/cognitive-assessment-system-pages-updated/signup-page.png" alt="Signup Page" width="1000">`{=html}
+```{=html}
+</p>
+```
+## 📊 Candidate Dashboard
+
+```{=html}
+<p align="center">
+```
+`<img src="screenshots/cognitive-assessment-system-pages-updated/dashboard-page.png" alt="Dashboard" width="1000">`{=html}
+```{=html}
+</p>
+```
+## 🎯 Assessment Level Selection
+
+```{=html}
+<p align="center">
+```
+`<img src="screenshots/cognitive-assessment-system-pages-updated/dashboard-test-selection-page.png" alt="Assessment Level Selection" width="1000">`{=html}
+```{=html}
+</p>
+```
+## ⏱️ Assessment Interface
+
+```{=html}
+<p align="center">
+```
+`<img src="screenshots/cognitive-assessment-system-pages-updated/assessment-page.png" alt="Assessment Interface" width="1000">`{=html}
+```{=html}
+</p>
+```
+## ❓ Assessment Question
+
+```{=html}
+<p align="center">
+```
+`<img src="screenshots/cognitive-assessment-system-pages-updated/assessment-question-page.png" alt="Assessment Question" width="1000">`{=html}
+```{=html}
+</p>
+```
+## 🏁 Final Question
+
+```{=html}
+<p align="center">
+```
+`<img src="screenshots/cognitive-assessment-system-pages-updated/assessment-final-question-page.png" alt="Final Question" width="1000">`{=html}
+```{=html}
+</p>
+```
+## 📚 Learning Resources
+
+```{=html}
+<p align="center">
+```
+`<img src="screenshots/cognitive-assessment-system-pages-updated/resources-page.png" alt="Resources" width="1000">`{=html}
+```{=html}
+</p>
+```
+
+------------------------------------------------------------------------
+
+# 🧠 Cognitive Assessment Domains
+
+### Logical Reasoning
+
+Series, coding-decoding, blood relations, statement-conclusion, and
+reasoning drills.
+
+### Quantitative Aptitude
+
+Percentages, ratios, averages, arithmetic, and data interpretation.
+
+### Verbal Ability
+
+Vocabulary, sentence arrangement, comprehension, and grammar correction.
+
+### Memory & Focus
+
+Number recall, word recall, image sequences, and concentration
+exercises.
+
+------------------------------------------------------------------------
+
+# 📈 Assessment-to-Learning Cycle
+
+``` text
+Assessment
+    ↓
+Score & Time Analysis
+    ↓
+Performance History
+    ↓
+Identify Improvement Areas
+    ↓
+Learning Resources
+    ↓
+Practice
+    ↓
+Next Assessment
+```
+
+------------------------------------------------------------------------
+
+# 🛠️ Technology Stack
+
+  Technology                    Purpose
+  ----------------------------- -------------------
+  **Python**                    Application logic
+  **Streamlit**                 Web interface
+  **Supabase**                  Backend database
+  **Passlib / PBKDF2-SHA256**   Password hashing
+  **HTML / CSS**                UI styling
+  **Git / GitHub**              Version control
+
+------------------------------------------------------------------------
+
+# 📁 Project Structure
+
+``` text
+Cognitive-Stress-Monitoring-Learning-Support-System/
+│
+├── .gitignore
+├── README.md
 │
 ├── mini project code/
 │   ├── app/
 │   │   ├── app.py
 │   │   ├── login.py
-│   │   ├── supabase_db.py
-│   │   ├── predict.py
-│   │   ├── question_generator.py
-│   │   ├── gemini_analysis.py
-│   │   ├── groq_client.py
-│   │   └── hf_client.py
-│   │
-│   ├── data/
-│   │   ├── dataset.csv
-│   │   ├── questions.json
-│   │   ├── _final_qns_extracted.txt
-│   │   └── images/
-│   │
-│   ├── model/
-│   │   └── train_model.py
+│   │   └── supabase_db.py
 │   │
 │   ├── database/
 │   │   └── database.py
-│   │
-│   ├── tests/
-│   │   └── cognitive_test.py
-│   │
-│   └── requirements.txt
+│   └── ...
 │
 ├── docs/
 │   └── ARCHITECTURE.md
 │
-├── screenshots/
-│   ├── README.md
-│   └── cognitive-assessment-system-pages-updated/
-│       ├── home-page.png
-│       ├── dashboard-page.png
-│       ├── dashboard-test-selection-page.png
-│       ├── login-page.png
-│       ├── signup-page.png
-│       ├── resources-page.png
-│       ├── assessment-page.png
-│       ├── assessment-question-page.png
-│       └── assessment-final-question-page.png
-│
-├── README.md
-├── LICENSE
-├── CONTRIBUTING.md
-├── CONTRIBUTORS.md
-├── CHANGELOG.md
-├── FILE_REFERENCE_GUIDE.md
-└── .gitignore
+└── screenshots/
+    └── cognitive-assessment-system-pages-updated/
+        ├── home-page.png
+        ├── login-page.png
+        ├── signup-page.png
+        ├── dashboard-page.png
+        ├── dashboard-test-selection-page.png
+        ├── assessment-page.png
+        ├── assessment-question-page.png
+        ├── assessment-final-question-page.png
+        └── resources-page.png
+```
 
-Local authentication files, local databases, and deployment secrets are intentionally excluded from the public repository.
+------------------------------------------------------------------------
 
-🚀 Installation & Setup
+# ⚙️ Installation & Setup
 
-1. Clone the Repository
+## 1. Clone
 
+``` bash
 git clone https://github.com/Akaash84/Cognitive-Stress-Monitoring-and-Learning-Support-System.git
-cd Cognitive-Stress-Monitoring-and-Learning-Support-System
+cd Cognitive-Stress-Monitoring-Learning-Support-System
+```
 
-2. Create a Virtual Environment
+## 2. Create a virtual environment
 
-Windows
+### Windows
 
+``` powershell
 python -m venv .venv
-.venv\Scripts\activate
+.venv\Scripts\Activate.ps1
+```
 
-macOS / Linux
+### Linux / macOS
 
+``` bash
 python3 -m venv .venv
 source .venv/bin/activate
+```
 
-3. Install Dependencies
+## 3. Install dependencies
 
-pip install -r "mini project code/requirements.txt"
+``` bash
+pip install -r requirements.txt
+```
 
-4. Configure Supabase
+## 4. Configure Supabase
 
-Create the secrets file locally:
+Provide the required Supabase credentials through environment variables
+or Streamlit secrets.
 
-mini project code/.streamlit/secrets.toml
+``` toml
+SUPABASE_URL = "your-supabase-project-url"
+SUPABASE_ANON_KEY = "your-supabase-anon-key"
+SUPABASE_SERVICE_ROLE_KEY = "your-service-role-key"
+```
 
-Add your own Supabase configuration:
+**Never commit real credentials to GitHub.**
 
-SUPABASE_URL = "your_supabase_url"
-SUPABASE_ANON_KEY = "your_supabase_anon_key"
-SUPABASE_SERVICE_ROLE_KEY = "your_service_role_key"
+------------------------------------------------------------------------
 
-Do not commit this file.
+# ▶️ Run the Application
 
-5. Run the Application
+From the application directory:
 
-cd "mini project code"
-streamlit run app/app.py
+``` bash
+streamlit run app.py
+```
 
-The application normally opens at:
+Open the local URL displayed by Streamlit.
 
-http://localhost:8501
+------------------------------------------------------------------------
 
-👨‍💻 How to Use
+# 🔐 Security
 
-1. Create an Account
+The repository follows these practices:
 
-Open the application.
+-   passwords are stored as hashes rather than plaintext
+-   Supabase credentials are kept outside tracked source
+-   local authentication files are ignored
+-   local database files are ignored
+-   Streamlit secrets are ignored
+-   default test credentials are not published in this README
 
-Select Signup.
+For production deployment, review Supabase Row Level Security,
+authorization, secret management, and database access policies.
 
-Enter a username and password.
+------------------------------------------------------------------------
 
-Create the account.
+# 🔬 Patent & Research Context
 
-Log in with the newly created account.
+**Title:** Adaptive Embedded System for Real-Time Cognitive Stress
+Monitoring and Learning Optimization
 
-2. Open the Dashboard
+**Application No.:** 202641017456\
+**Publication No.:** IN202641017456 A1\
+**Filing Date:** 17 February 2026\
+**Publication Date:** 27 February 2026\
+**IPC:** A61B5/16, G16H20/70
 
-Choose:
+**Applicant:** Vallurupalli Nageswara Rao Vignana Jyothi Institute of
+Engineering and Technology (VNRVJIET)
 
-Mode
-├── Exam
-└── Practice
+**Inventors:**
 
-Level
-├── Foundation
-└── Advanced
+1.  Karnam Akhil
+2.  Dr. S. Nagini
+3.  Manda Akaash
+4.  Malladi Sri Raksha
+5.  Malapati Pavan
+6.  Mahendra Architha
 
-Then select Start Test.
+These details are taken from the associated Indian patent publication.
+citeturn14file0
 
-3. Complete the Assessment
+------------------------------------------------------------------------
 
-During an assessment you can:
+# 🔮 Future Scope
 
-select an answer
+-   ESP32-based physiological sensing
+-   real-time heart-rate monitoring
+-   temperature monitoring
+-   cognitive interaction hardware
+-   LED / buzzer feedback
+-   individualized cognitive baselines
+-   adaptive stress thresholds
+-   trend-based cognitive monitoring
+-   adaptive question difficulty
+-   personalized learning recommendations
+-   advanced analytics dashboards
+-   cloud deployment
+-   automated testing and CI/CD
 
-move between questions
+------------------------------------------------------------------------
 
-use the question palette
+# ⚠️ Privacy & Responsible Use
 
-monitor progress
+This project is intended for educational, research, and demonstration
+purposes.
 
-monitor remaining time
+Physiological and cognitive information should be collected with
+appropriate consent and protected using suitable access controls. The
+system should not be treated as a medical diagnostic or treatment tool.
 
-move using Previous / Next
+------------------------------------------------------------------------
 
-submit manually
+# 📚 Documentation
 
-allow automatic submission when the timer expires
+Additional documentation is available in:
 
-4. Review Performance
+-   `docs/ARCHITECTURE.md`
+-   `screenshots/README.md`
 
-The system can store and use:
+The associated patent document provides the authoritative
+patent-specific description of the broader embedded-system invention.
 
-score
+------------------------------------------------------------------------
 
-time taken
+# 👥 Contributors
 
-assessment date
+The associated patent publication lists:
 
-assessment type
+-   Karnam Akhil
+-   Dr. S. Nagini
+-   Manda Akaash
+-   Malladi Sri Raksha
+-   Malapati Pavan
+-   Mahendra Architha
 
-historical attempts
+**Applicant:** Vallurupalli Nageswara Rao Vignana Jyothi Institute of
+Engineering and Technology.
 
-optional stress information
+------------------------------------------------------------------------
 
-5. Use Learning Resources
+# 📄 License
 
-The Resources section provides material for:
+See the repository `LICENSE` file for the applicable terms.
 
-Logical Reasoning
+------------------------------------------------------------------------
 
-Quantitative Aptitude
-
-Verbal Ability
-
-Memory & Focus
-
-practice sheets
-
-mock tests
-
-downloadable question resources
-
-📸 Application Screenshots
-
-🏠 Home Page
-
-The home page introduces the platform, timed assessment workflow, performance tracking, and learning-support purpose.
-
-
-
-📊 Candidate Dashboard
-
-The dashboard provides the entry point for starting assessments and selecting the test workflow.
-
-
-
-🎯 Test Selection
-
-Users can select Exam / Practice and choose the Foundation / Advanced assessment level.
-
-
-
-🔐 Login
-
-The login page provides username/password authentication.
-
-
-
-📝 Signup
-
-New users can create an account before accessing the assessment dashboard.
-
-
-
-📚 Learning Resources
-
-The Resources page organizes learning material and practice activities across multiple cognitive domains.
-
-
-
-🧪 Assessment Workspace
-
-The assessment interface provides the timed examination environment, question palette, progress tracking, navigation, and submission controls.
-
-
-
-❓ Assessment Question
-
-The platform supports multiple-choice and image-based cognitive questions.
-
-
-
-🏁 Final Question & Submission
-
-The final-question screen demonstrates answer selection, question status, navigation, and final submission.
-
-
-
-🔬 Research & Embedded-System Concept
-
-The project is associated with the research concept:
-
-Adaptive Embedded System for Real-Time Cognitive Stress Monitoring and Learning Optimization
-
-The Indian patent application associated with the concept is:
-
-Field
-
-Details
-
-Application No.
-
-202641017456
-
-Publication No.
-
-IN202641017456 A1
-
-Filing Date
-
-17 February 2026
-
-Publication Date
-
-27 February 2026
-
-Applicant
-
-Vallurupalli Nageswara Rao Vignana Jyothi Institute of Engineering and Technology
-
-IPC
-
-A61B5/16, G16H20/70
-
-The specification describes a desk-mounted system integrating:
-
-heart-rate / pulse sensing
-
-temperature sensing
-
-push-button cognitive interaction
-
-an embedded controller
-
-signal processing
-
-cognitive stress computation
-
-personalized baseline learning
-
-temporal trend analysis
-
-adaptive thresholds
-
-visual indicators
-
-audio alerts
-
-recovery verification
-
-The patent specification describes the system as a closed-loop approach that can detect cognitive overload and progressive cognitive decline during active study sessions and provide adaptive micro-interventions.
-
-Inventors listed in the application
-
-Mr. Karnam Akhil
-
-Dr. S. Nagini
-
-Manda Akaash
-
-Malladi Sri Raksha
-
-Malapati Pavan
-
-Mahendra Architha
-
-🧩 Hardware Concept
-
-The broader embedded-system concept can use:
-
-Component
-
-Role
-
-Heart Rate / Pulse Sensor
-
-Measures pulse-related physiological changes
-
-Temperature Sensor
-
-Measures temperature variation associated with fatigue
-
-Push Button
-
-Captures short cognitive interaction responses
-
-ESP32 / Embedded Controller
-
-Data acquisition and local processing
-
-Signal Processing
-
-Filtering, normalization, feature extraction
-
-Cognitive Analysis
-
-Computes cognitive stress indicators
-
-Baseline Learning
-
-Builds individualized reference profiles
-
-Trend Analysis
-
-Detects progressive deviations
-
-LED Indicators
-
-Visual cognitive-state feedback
-
-Buzzer
-
-Audio overload / alert feedback
-
-The patent specification identifies LM35 / DS18B20 as possible temperature sensors and an ESP32 as a possible embedded controller.
-
-🤖 ML & AI Direction
-
-The project also includes an analytical layer intended to connect assessment performance and stress information.
-
-Machine Learning
-
-The project materials describe a trained Random Forest approach for performance classification using factors such as:
-
-assessment score
-
-time taken
-
-cognitive domain
-
-stress level
-
-AI-Assisted Recommendations
-
-The broader project concept uses AI services to analyze questions attempted during elevated-stress periods and support personalized, domain-specific learning recommendations.
-
-The exact availability of external AI integrations depends on the configured project modules and API credentials.
-
-📈 What the System Enables
-
-The combined workflow is designed to support:
-
-For Students
-
-realistic exam-style practice
-
-timed cognitive assessments
-
-performance history
-
-identification of weaker areas
-
-domain-specific learning resources
-
-stress-aware learning insights
-
-For Research
-
-correlation of question timing with physiological data
-
-longitudinal performance tracking
-
-cognitive-domain analysis
-
-personalized baseline modeling
-
-adaptive cognitive feedback research
-
-For Educational Environments
-
-structured assessment workflows
-
-scalable cloud-backed storage
-
-repeat-attempt analysis
-
-learning-resource integration
-
-potential future integration with low-cost embedded sensing
-
-🧪 Example Closed-Loop Research Workflow
-
-1. Sense
-   ↓
-2. Process physiological signals
-   ↓
-3. Analyze cognitive state
-   ↓
-4. Compare with personalized baseline
-   ↓
-5. Detect stress / deviation
-   ↓
-6. Trigger adaptive feedback
-   ↓
-7. Verify recovery
-   ↓
-8. Update baseline
-   ↓
-9. Continue monitoring
-
-This closed-loop concept is described in the associated patent specification and is the broader research direction behind the software platform.
-
-🛡️ Privacy & Responsible Use
-
-This project is intended for educational and research use.
-
-Physiological and stress-related measurements should be treated as sensitive information. Deployments should:
-
-protect Supabase credentials
-
-restrict database access appropriately
-
-avoid committing secrets
-
-collect physiological data only with appropriate consent
-
-clearly communicate how collected data is used
-
-avoid treating stress classifications as medical diagnoses
-
-This system is not a medical diagnostic device. Stress-related outputs should be interpreted as software/research indicators rather than clinical diagnoses.
-
-🧭 Current Scope & Future Direction
-
-Current software scope
-
-Streamlit web application
-
-Supabase-backed authentication
-
-timed cognitive assessments
-
-Foundation / Advanced levels
-
-Exam / Practice workflows
-
-question timing
-
-assessment history
-
-learning resources
-
-stress-related backend data integration
-
-Future research direction
-
-deeper real-time hardware integration
-
-richer HRV analysis
-
-stronger personalized baseline models
-
-improved temporal stress mapping
-
-adaptive study recommendations
-
-closed-loop intervention validation
-
-educator / research dashboards
-
-expanded longitudinal analytics
-
-📚 Documentation
-
-Additional project documentation:
-
-docs/ARCHITECTURE.md
-
-CONTRIBUTING.md
-
-CHANGELOG.md
-
-FILE_REFERENCE_GUIDE.md
-
-🤝 Contributing
-
-Contributions are welcome.
-
-A typical contribution workflow is:
-
-git checkout -b feature/your-feature
-git add .
-git commit -m "Add: your feature"
-git push origin feature/your-feature
-
-Then open a Pull Request describing:
-
-what changed
-
-why it changed
-
-how it was tested
-
-any configuration changes required
-
-Please review CONTRIBUTING.md before contributing.
-
-📄 License
-
-This project is distributed under the license included in LICENSE.
-
-👥 Project Contributors
-
-See CONTRIBUTORS.md for the contributor list.
-
-⭐ Project Summary
-
-Cognitive Stress Monitoring & Learning Support System brings together:
-
-Cognitive Assessment
-        +
-Performance Tracking
-        +
-Physiological Stress Data
-        +
-Question-Level Timing
-        +
-Learning Resources
-        +
-ML / AI Analysis
-        +
-Adaptive Embedded-System Research
-
-The goal is to move beyond score-only assessment toward a more context-aware, personalized, and research-oriented learning-support platform.
-
-<div align="center">
-
-🧠 Assess • Monitor • Understand • Improve
-
-Built for cognitive assessment, stress-aware learning support, and adaptive educational technology research.
-
-</div>
+::: {align="center"}
+### 🧠 Assess • Analyze • Learn • Improve
+:::
