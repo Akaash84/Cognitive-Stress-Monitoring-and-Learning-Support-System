@@ -210,34 +210,28 @@ flowchart TB
 
 # Supabase Data Architecture
 
-```mermaid
-erDiagram
-    USERS ||--o{ TEST_HISTORY : has
+The application uses Supabase as the central data layer for authentication, assessment questions, physiological/stress records, and assessment history.
 
-    USERS {
-        int id
-        string username
-        string password_hash
-    QUESTIONS {
-        int qid
-        datetime st_time
-        datetime en_time
-    HEALTH_DATA {
-        int id
-        string user
-        float heart_rate
-        float temperature
-        float stress
-        datetime timestamp
-    TEST_HISTORY {
-        int id
-        string username
-        int score
-        float time_taken_seconds
-        date date
-        string type
-        float stress
+```mermaid
+flowchart LR
+    USER[User]
+    USERS[(users)]
+    QUESTIONS[(questions)]
+    HEALTH[(health_data)]
+    HISTORY[(test_history)]
+
+    USER --> USERS
+    USERS --> HISTORY
+    QUESTIONS --> HEALTH
+    USER --> HISTORY
 ```
+
+The main data areas are:
+
+- **users** — application authentication records
+- **questions** — assessment question and timing-related records
+- **health_data** — physiological and stress-related records
+- **test_history** — user assessment results and attempt history
 
 > The exact deployed columns can vary with the current Supabase schema.
 
@@ -245,7 +239,7 @@ erDiagram
 
 # Application Screenshots
 
-## 🏠 Home Page
+##  Home Page
 
 ![Home Page](screenshots/cognitive-assessment-system-pages-updated/home-page.png)
 ## Login Page
@@ -503,7 +497,7 @@ Software development, application implementation, integration, documentation, an
 
 ---
 
-# 📄 License
+#  License
 
 See the repository `LICENSE` file for the applicable terms.
 
